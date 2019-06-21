@@ -14,6 +14,8 @@ public class ViewAnimationFactory<R> implements TransitionFactory<R> {
   private final ViewTransition.ViewTransitionAnimationFactory viewTransitionAnimationFactory;
   private Transition<R> transition;
 
+  // Public API.
+  @SuppressWarnings("unused")
   public ViewAnimationFactory(Animation animation) {
     this(new ConcreteViewTransitionAnimationFactory(animation));
   }
@@ -33,7 +35,7 @@ public class ViewAnimationFactory<R> implements TransitionFactory<R> {
    * {@link ViewTransition}.
    *
    * @param dataSource {@inheritDoc}
-   * @param isFirstResource   {@inheritDoc}
+   * @param isFirstResource {@inheritDoc}
    */
   @Override
   public Transition<R> build(DataSource dataSource, boolean isFirstResource) {
@@ -48,11 +50,11 @@ public class ViewAnimationFactory<R> implements TransitionFactory<R> {
     return transition;
   }
 
-  private static class ConcreteViewTransitionAnimationFactory implements ViewTransition
-      .ViewTransitionAnimationFactory {
+  private static class ConcreteViewTransitionAnimationFactory
+      implements ViewTransition.ViewTransitionAnimationFactory {
     private final Animation animation;
 
-    public ConcreteViewTransitionAnimationFactory(Animation animation) {
+    ConcreteViewTransitionAnimationFactory(Animation animation) {
       this.animation = animation;
     }
 
@@ -62,11 +64,11 @@ public class ViewAnimationFactory<R> implements TransitionFactory<R> {
     }
   }
 
-  private static class ResourceViewTransitionAnimationFactory implements ViewTransition
-      .ViewTransitionAnimationFactory {
+  private static class ResourceViewTransitionAnimationFactory
+      implements ViewTransition.ViewTransitionAnimationFactory {
     private final int animationId;
 
-    public ResourceViewTransitionAnimationFactory(int animationId) {
+    ResourceViewTransitionAnimationFactory(int animationId) {
       this.animationId = animationId;
     }
 

@@ -15,7 +15,9 @@
     </module>
 
     <!-- Ensure trailling newline for compatibility -->
-    <module name="NewlineAtEndOfFile" />
+    <module name="NewlineAtEndOfFile">
+        <property name="lineSeparator" value="lf"/>
+    </module>
 
     <!-- Space after 'for' and 'if' -->
     <module name="RegexpSingleline">
@@ -69,7 +71,10 @@
         <module name="StaticVariableName" />
         <module name="TypeName" />
 
-        <module name="TrailingComment" />
+        <!-- Allow common trailing comments used to describe suppressions -->
+        <module name="TrailingComment">
+            <property name="legalComment" value="^Public API.?$|^NOPMD.*$" />
+        </module>
 
         <!-- Checks for imports. -->
         <!-- See http://checkstyle.sourceforge.net/config_imports.html -->
@@ -89,34 +94,15 @@
         <!-- Prevent importing Mockito matchers directly -->
         <module name="IllegalImport">
             <property name="illegalPkgs" value="org.mockito.internal" />
-            <message key="import.illegal" value="Import from illegal package - {0}. Use org.mockito.Matchers to instantiate argument matchers; or org.hamcrest.Matchers for assertThat." />
+            <message key="import.illegal" value="Import from illegal package - {0}. Use org.mockito.Matchers to instantiate argument matchers." />
         </module>
-        <module name="ImportOrder">
-          <!-- Checks for out of order import statements. -->
 
-          <property name="sortStaticImportsAlphabetically" value="true"/>
-           <property name="severity" value="error"/>
-           <property name="groups" value="*"/>
-           <!-- This ensures that static imports go first. -->
-           <property name="option" value="top"/>
-           <property name="tokens" value="STATIC_IMPORT, IMPORT"/>
-         </module>
-
-        <!-- Checks for whitespace. -->
-        <!-- See http://checkstyle.sourceforge.net/config_whitespace.html -->
-        <module name="GenericWhitespace" />
-        <module name="MethodParamPad" />
-        <module name="NoWhitespaceAfter">
-            <property name="tokens"
-                      value="BNOT, DEC, DOT, INC, LNOT, UNARY_MINUS, UNARY_PLUS" />
+        <!-- ArgumentMatchers isn't available internally, the same methods are available on org.mockito.Mockito. -->
+        <module name="IllegalImport">
+            <property name="illegalClasses" value="org\.mockito\.ArgumentMatchers.*" />
+            <property name="regexp" value="true" />
+            <message key="import.illegal" value="Import from illegal class - {0}. Use org.mockito.Mockito to statically import matcher methods." />
         </module>
-        <module name="NoWhitespaceBefore" />
-        <module name="OperatorWrap" />
-        <module name="ParenPad" />
-        <module name="TypecastParenPad" />
-        <module name="WhitespaceAfter" />
-        <module name="WhitespaceAround" />
-
 
         <!-- Modifier Checks. -->
         <!-- See http://checkstyle.sourceforge.net/config_modifier.html -->
@@ -124,7 +110,9 @@
 
         <!-- Checks for blocks. -->
         <!-- See http://checkstyle.sourceforge.net/config_blocks.html -->
-        <module name="AvoidNestedBlocks" />
+        <module name="AvoidNestedBlocks">
+            <property name="allowInSwitchCase" value="true" />
+        </module>
         <module name="EmptyBlock" >
             <property name="option" value="text"/>
         </module>
@@ -133,7 +121,7 @@
         <module name="LeftCurly" />
         <module name="RightCurly">
             <property name="tokens"
-                      value="LITERAL_TRY, LITERAL_CATCH, LITERAL_FINALLY, LITERAL_ELSE" />
+              value="LITERAL_TRY, LITERAL_CATCH, LITERAL_FINALLY, LITERAL_ELSE" />
         </module>
 
         <!-- Checks for common coding problems. -->
@@ -150,9 +138,6 @@
         <module name="SimplifyBooleanReturn" />
         <module name="StringLiteralEquality" />
         <module name="UnnecessaryParentheses" />
-        <module name="LineLength">
-            <property name="max" value="100" />
-        </module>
 
         <!-- Checks for class design. -->
         <!-- See http://checkstyle.sourceforge.net/config_design.html -->

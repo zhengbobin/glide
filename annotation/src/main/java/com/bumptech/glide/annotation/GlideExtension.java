@@ -11,5 +11,5 @@ import java.lang.annotation.Target;
  * @see GlideOption
  */
 @Target(ElementType.TYPE)
-@Retention(RetentionPolicy.SOURCE)
-public @interface GlideExtension { }
+@Retention(RetentionPolicy.CLASS)
+public @interface GlideExtension {}

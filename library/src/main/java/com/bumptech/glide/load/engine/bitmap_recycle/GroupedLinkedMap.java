@@ -1,6 +1,6 @@
 package com.bumptech.glide.load.engine.bitmap_recycle;
 
-import android.support.annotation.Nullable;
+import androidx.annotation.Nullable;
 import com.bumptech.glide.util.Synthetic;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -13,8 +13,8 @@ import java.util.Map;
  * bitmap size, rather than the LRU bitmap object. We can then remove bitmaps from the least
  * recently used size of bitmap when we need to reduce our cache size.
  *
- * For the purposes of the LRU, we count gets for a particular size of bitmap as an access, even if
- * no bitmaps of that size are present. We do not count addition or removal of bitmaps as an
+ * <p>For the purposes of the LRU, we count gets for a particular size of bitmap as an access, even
+ * if no bitmaps of that size are present. We do not count addition or removal of bitmaps as an
  * access.
  */
 class GroupedLinkedMap<K extends Poolable, V> {
@@ -127,11 +127,11 @@ class GroupedLinkedMap<K extends Poolable, V> {
 
     // Used only for the first item in the list which we will treat specially and which will not
     // contain a value.
-    public LinkedEntry() {
+    LinkedEntry() {
       this(null);
     }
 
-    public LinkedEntry(K key) {
+    LinkedEntry(K key) {
       next = prev = this;
       this.key = key;
     }

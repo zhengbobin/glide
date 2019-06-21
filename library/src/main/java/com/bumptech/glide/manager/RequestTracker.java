@@ -1,5 +1,9 @@
 package com.bumptech.glide.manager;
 
+import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.bumptech.glide.request.Request;
 import com.bumptech.glide.util.Util;
 import java.util.ArrayList;
@@ -14,6 +18,7 @@ import java.util.WeakHashMap;
  * <p>This class is not thread safe and must be accessed on the main thread.
  */
 public class RequestTracker {
+  private static final String TAG = "RequestTracker";
   // Most requests will be for views and will therefore be held strongly (and safely) by the view
   // via the tag. However, a user can always pass in a different type of target which may end up not
   // being strongly referenced even though the user still would like the request to finish. Weak
@@ -28,70 +33,91 @@ public class RequestTracker {
   // before they start running or while they are paused. See #346.
   @SuppressWarnings("MismatchedQueryAndUpdateOfCollection")
   private final List<Request> pendingRequests = new ArrayList<>();
+
   private boolean isPaused;
 
-  /**
-   * Starts tracking the given request.
-   */
-  public void runRequest(Request request) {
+  /** Starts tracking the given request. */
+  public void runRequest(@NonNull Request request) {
     requests.add(request);
     if (!isPaused) {
       request.begin();
     } else {
+      request.clear();
+      if (Log.isLoggable(TAG, Log.VERBOSE)) {
+        Log.v(TAG, "Paused, delaying request");
+      }
       pendingRequests.add(request);
     }
   }
 
-  // Visible for testing.
+  @VisibleForTesting
   void addRequest(Request request) {
     requests.add(request);
   }
 
   /**
    * Stops tracking the given request, clears, and recycles it, and returns {@code true} if the
-   * request was removed or {@code false} if the request was not found.
+   * request was removed or invalid or {@code false} if the request was not found.
    */
-  public boolean clearRemoveAndRecycle(Request request) {
+  public boolean clearRemoveAndRecycle(@Nullable Request request) {
+    // It's safe for us to recycle because this is only called when the user is explicitly clearing
+    // a Target so we know that there are no remaining references to the Request.
+    return clearRemoveAndMaybeRecycle(request, /*isSafeToRecycle=*/ true);
+  }
+
+  private boolean clearRemoveAndMaybeRecycle(@Nullable Request request, boolean isSafeToRecycle) {
     if (request == null) {
-      return false;
+      // If the Request is null, the request is already cleared and we don't need to search further
+      // for its owner.
+      return true;
     }
     boolean isOwnedByUs = requests.remove(request);
     // Avoid short circuiting.
     isOwnedByUs = pendingRequests.remove(request) || isOwnedByUs;
     if (isOwnedByUs) {
       request.clear();
-      request.recycle();
+      if (isSafeToRecycle) {
+        request.recycle();
+      }
     }
     return isOwnedByUs;
   }
 
-  /**
-   * Returns {@code true} if requests are currently paused, and {@code false} otherwise.
-   */
+  /** Returns {@code true} if requests are currently paused, and {@code false} otherwise. */
   public boolean isPaused() {
     return isPaused;
   }
 
-  /**
-   * Stops any in progress requests.
-   */
+  /** Stops any in progress requests. */
   public void pauseRequests() {
     isPaused = true;
     for (Request request : Util.getSnapshot(requests)) {
       if (request.isRunning()) {
-        request.pause();
+        request.clear();
         pendingRequests.add(request);
       }
     }
   }
 
-  /**
-   * Starts any not yet completed or failed requests.
-   */
+  /** Stops any in progress requests and releases bitmaps associated with completed requests. */
+  public void pauseAllRequests() {
+    isPaused = true;
+    for (Request request : Util.getSnapshot(requests)) {
+      if (request.isRunning() || request.isComplete()) {
+        request.clear();
+        pendingRequests.add(request);
+      }
+    }
+  }
+
+  /** Starts any not yet completed or failed requests. */
   public void resumeRequests() {
     isPaused = false;
     for (Request request : Util.getSnapshot(requests)) {
-      if (!request.isComplete() && !request.isCancelled() && !request.isRunning()) {
+      // We don't need to check for cleared here. Any explicit clear by a user will remove the
+      // Request from the tracker, so the only way we'd find a cleared request here is if we cleared
+      // it. As a result it should be safe for us to resume cleared requests.
+      if (!request.isComplete() && !request.isRunning()) {
         request.begin();
       }
     }
@@ -105,22 +131,22 @@ public class RequestTracker {
    */
   public void clearRequests() {
     for (Request request : Util.getSnapshot(requests)) {
-      clearRemoveAndRecycle(request);
+      // It's unsafe to recycle the Request here because we don't know who might else have a
+      // reference to it.
+      clearRemoveAndMaybeRecycle(request, /*isSafeToRecycle=*/ false);
     }
     pendingRequests.clear();
   }
 
-  /**
-   * Restarts failed requests and cancels and restarts in progress requests.
-   */
+  /** Restarts failed requests and cancels and restarts in progress requests. */
   public void restartRequests() {
     for (Request request : Util.getSnapshot(requests)) {
-      if (!request.isComplete() && !request.isCancelled()) {
-        // Ensure the request will be restarted in onResume.
-        request.pause();
+      if (!request.isComplete() && !request.isCleared()) {
+        request.clear();
         if (!isPaused) {
           request.begin();
         } else {
+          // Ensure the request will be restarted in onResume.
           pendingRequests.add(request);
         }
       }

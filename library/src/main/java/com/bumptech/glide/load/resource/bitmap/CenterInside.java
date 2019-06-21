@@ -1,41 +1,20 @@
 package com.bumptech.glide.load.resource.bitmap;
 
-import android.content.Context;
 import android.graphics.Bitmap;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import com.bumptech.glide.load.engine.bitmap_recycle.BitmapPool;
 import java.security.MessageDigest;
 
 /**
- * Returns the image with its original size if its dimensions match or are smaller
- * than the target's, couple with {@link android.widget.ImageView.ScaleType#CENTER_INSIDE}
- * in order to center it in Target. If not, then it is scaled so that one of the dimensions of
- * the image will be equal to the given dimension and the other will be less than the given
- * dimension (maintaining the image's aspect ratio).
+ * Returns the image with its original size if its dimensions match or are smaller than the
+ * target's, couple with {@link android.widget.ImageView.ScaleType#CENTER_INSIDE} in order to center
+ * it in Target. If not, then it is scaled so that one of the dimensions of the image will be equal
+ * to the given dimension and the other will be less than the given dimension (maintaining the
+ * image's aspect ratio).
  */
 public class CenterInside extends BitmapTransformation {
   private static final String ID = "com.bumptech.glide.load.resource.bitmap.CenterInside";
   private static final byte[] ID_BYTES = ID.getBytes(CHARSET);
-
-  public CenterInside() {
-    // Intentionally empty.
-  }
-
-  /**
-   * Use {@link #CenterInside()}.
-   */
-  @Deprecated
-  public CenterInside(@SuppressWarnings("unused") Context context) {
-    this();
-  }
-
-  /**
-   * Use {@link #CenterInside()}.
-   */
-  @Deprecated
-  public CenterInside(@SuppressWarnings("unused") BitmapPool bitmapPool) {
-    this();
-  }
 
   @Override
   protected Bitmap transform(
@@ -54,9 +33,7 @@ public class CenterInside extends BitmapTransformation {
   }
 
   @Override
-  public void updateDiskCacheKey(MessageDigest messageDigest) {
+  public void updateDiskCacheKey(@NonNull MessageDigest messageDigest) {
     messageDigest.update(ID_BYTES);
   }
 }
-
-

@@ -14,10 +14,9 @@ import javax.lang.model.element.PackageElement;
 import javax.lang.model.element.TypeElement;
 
 /**
- * Runs the final steps of Glide's annotation process and generates the combined
- * {@link AppGlideModule}, {@link com.bumptech.glide.Glide},
- * {@link com.bumptech.glide.RequestManager}, and
- * {@link com.bumptech.glide.request.RequestOptions} classes.
+ * Runs the final steps of Glide's annotation process and generates the combined {@code
+ * AppGlideModule}, {@code com.bumptech.glide.Glide}, {@code com.bumptech.glide.RequestManager}, and
+ * {@code com.bumptech.glide.request.RequestOptions} classes.
  */
 final class AppModuleProcessor {
   private static final String COMPILER_PACKAGE_NAME =
@@ -40,17 +39,18 @@ final class AppModuleProcessor {
     appModuleGenerator = new AppModuleGenerator(processorUtil);
     requestOptionsGenerator = new RequestOptionsGenerator(processingEnv, processorUtil);
     requestManagerGenerator = new RequestManagerGenerator(processingEnv, processorUtil);
-    requestManagerFactoryGenerator = new RequestManagerFactoryGenerator(processingEnv);
+    requestManagerFactoryGenerator =
+        new RequestManagerFactoryGenerator(processingEnv, processorUtil);
     glideGenerator = new GlideGenerator(processingEnv, processorUtil);
     requestBuilderGenerator = new RequestBuilderGenerator(processingEnv, processorUtil);
   }
 
   void processModules(Set<? extends TypeElement> set, RoundEnvironment env) {
-     for (TypeElement element : processorUtil.getElementsFor(GlideModule.class, env)) {
-       if (processorUtil.isAppGlideModule(element)) {
-         appGlideModules.add(element);
-       }
-     }
+    for (TypeElement element : processorUtil.getElementsFor(GlideModule.class, env)) {
+      if (processorUtil.isAppGlideModule(element)) {
+        appGlideModules.add(element);
+      }
+    }
 
     processorUtil.debugLog("got app modules: " + appGlideModules);
 
@@ -84,16 +84,19 @@ final class AppModuleProcessor {
     String generatedCodePackageName = appModule.getEnclosingElement().toString();
 
     TypeSpec generatedRequestOptions =
-          requestOptionsGenerator.generate(generatedCodePackageName, indexedClassNames.extensions);
-      writeRequestOptions(generatedCodePackageName, generatedRequestOptions);
+        requestOptionsGenerator.generate(generatedCodePackageName, indexedClassNames.extensions);
+    writeRequestOptions(generatedCodePackageName, generatedRequestOptions);
 
     TypeSpec generatedRequestBuilder =
-        requestBuilderGenerator.generate(generatedCodePackageName, generatedRequestOptions);
+        requestBuilderGenerator.generate(
+            generatedCodePackageName, indexedClassNames.extensions, generatedRequestOptions);
     writeRequestBuilder(generatedCodePackageName, generatedRequestBuilder);
 
     TypeSpec requestManager =
         requestManagerGenerator.generate(
-            generatedCodePackageName, generatedRequestOptions, generatedRequestBuilder,
+            generatedCodePackageName,
+            generatedRequestOptions,
+            generatedRequestBuilder,
             indexedClassNames.extensions);
     writeRequestManager(generatedCodePackageName, requestManager);
 
@@ -166,8 +169,8 @@ final class AppModuleProcessor {
   }
 
   private static final class FoundIndexedClassNames {
-    final Set<String> glideModules;
-    final Set<String> extensions;
+    private final Set<String> glideModules;
+    private final Set<String> extensions;
 
     private FoundIndexedClassNames(Set<String> glideModules, Set<String> extensions) {
       this.glideModules = glideModules;

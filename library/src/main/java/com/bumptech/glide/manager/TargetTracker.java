@@ -1,26 +1,26 @@
 package com.bumptech.glide.manager;
 
+import androidx.annotation.NonNull;
 import com.bumptech.glide.request.target.Target;
 import com.bumptech.glide.util.Util;
-import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Set;
 import java.util.WeakHashMap;
 
 /**
- * Holds the set of {@link Target}s currently active for a
- * {@link com.bumptech.glide.RequestManager} and forwards on lifecycle events.
+ * Holds the set of {@link Target}s currently active for a {@link com.bumptech.glide.RequestManager}
+ * and forwards on lifecycle events.
  */
 public final class TargetTracker implements LifecycleListener {
   private final Set<Target<?>> targets =
       Collections.newSetFromMap(new WeakHashMap<Target<?>, Boolean>());
 
-  public void track(Target<?> target) {
+  public void track(@NonNull Target<?> target) {
     targets.add(target);
   }
 
-  public void untrack(Target<?> target) {
+  public void untrack(@NonNull Target<?> target) {
     targets.remove(target);
   }
 
@@ -45,8 +45,9 @@ public final class TargetTracker implements LifecycleListener {
     }
   }
 
+  @NonNull
   public List<Target<?>> getAll() {
-    return new ArrayList<>(targets);
+    return Util.getSnapshot(targets);
   }
 
   public void clear() {

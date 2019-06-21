@@ -5,13 +5,11 @@ import static com.bumptech.glide.request.RequestOptions.fitCenterTransform;
 import android.content.Context;
 import android.content.Intent;
 import android.os.Bundle;
-import android.support.v4.app.FragmentActivity;
 import android.widget.ImageView;
+import androidx.fragment.app.FragmentActivity;
 import com.bumptech.glide.samples.flickr.api.Photo;
 
-/**
- * A simple activity for viewing a single photo.
- */
+/** A simple activity for viewing a single photo. */
 public class FullscreenActivity extends FragmentActivity {
   private static final String ARG_PHOTO = "photo";
 

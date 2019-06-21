@@ -1,6 +1,7 @@
 package com.bumptech.glide.load.model;
 
 import android.util.Log;
+import androidx.annotation.NonNull;
 import com.bumptech.glide.load.Encoder;
 import com.bumptech.glide.load.Options;
 import com.bumptech.glide.load.engine.bitmap_recycle.ArrayPool;
@@ -11,8 +12,7 @@ import java.io.InputStream;
 import java.io.OutputStream;
 
 /**
- * An {@link com.bumptech.glide.load.Encoder} that can write an {@link java.io.InputStream} to
- * disk.
+ * An {@link com.bumptech.glide.load.Encoder} that can write an {@link java.io.InputStream} to disk.
  */
 public class StreamEncoder implements Encoder<InputStream> {
   private static final String TAG = "StreamEncoder";
@@ -23,7 +23,7 @@ public class StreamEncoder implements Encoder<InputStream> {
   }
 
   @Override
-  public boolean encode(InputStream data, File file, Options options) {
+  public boolean encode(@NonNull InputStream data, @NonNull File file, @NonNull Options options) {
     byte[] buffer = byteArrayPool.get(ArrayPool.STANDARD_BUFFER_SIZE_BYTES, byte[].class);
     boolean success = false;
     OutputStream os = null;
@@ -47,7 +47,7 @@ public class StreamEncoder implements Encoder<InputStream> {
           // Do nothing.
         }
       }
-      byteArrayPool.put(buffer, byte[].class);
+      byteArrayPool.put(buffer);
     }
     return success;
   }

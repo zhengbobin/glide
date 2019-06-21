@@ -1,8 +1,8 @@
 package com.bumptech.glide.load.engine.bitmap_recycle;
 
-import android.support.annotation.Nullable;
-import android.support.annotation.VisibleForTesting;
 import android.util.Log;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.bumptech.glide.util.Preconditions;
 import com.bumptech.glide.util.Synthetic;
 import java.util.HashMap;
@@ -11,18 +11,18 @@ import java.util.NavigableMap;
 import java.util.TreeMap;
 
 /**
- * A fixed size Array Pool that evicts arrays using an LRU strategy to keep the pool under
- * the maximum byte size.
+ * A fixed size Array Pool that evicts arrays using an LRU strategy to keep the pool under the
+ * maximum byte size.
  */
 public final class LruArrayPool implements ArrayPool {
   // 4MB.
-  static final int DEFAULT_SIZE = 4 * 1024 * 1024;
+  private static final int DEFAULT_SIZE = 4 * 1024 * 1024;
 
   /**
    * The maximum number of times larger an int array may be to be than a requested size to eligible
    * to be returned from the pool.
    */
-  private static final int MAX_OVER_SIZE_MULTIPLE = 8;
+  @VisibleForTesting static final int MAX_OVER_SIZE_MULTIPLE = 8;
   /** Used to calculate the maximum % of the total pool size a single byte array may consume. */
   private static final int SINGLE_ARRAY_MAX_SIZE_DIVISOR = 2;
 
@@ -47,8 +47,17 @@ public final class LruArrayPool implements ArrayPool {
     this.maxSize = maxSize;
   }
 
+  @Deprecated
   @Override
-  public synchronized <T> void put(T array, Class<T> arrayClass) {
+  public <T> void put(T array, Class<T> arrayClass) {
+    put(array);
+  }
+
+  @Override
+  public synchronized <T> void put(T array) {
+    @SuppressWarnings("unchecked")
+    Class<T> arrayClass = (Class<T>) array.getClass();
+
     ArrayAdapterInterface<T> arrayAdapter = getAdapterFromType(arrayClass);
     int size = arrayAdapter.getArrayLength(array);
     int arrayBytes = size * arrayAdapter.getElementSizeInBytes();
@@ -66,35 +75,42 @@ public final class LruArrayPool implements ArrayPool {
   }
 
   @Override
-  public <T> T get(int size, Class<T> arrayClass) {
-    ArrayAdapterInterface<T> arrayAdapter = getAdapterFromType(arrayClass);
-    T result;
-    synchronized (this) {
-      Integer possibleSize = getSizesForAdapter(arrayClass).ceilingKey(size);
-      final Key key;
-      if (mayFillRequest(size, possibleSize)) {
-        key = keyPool.get(possibleSize, arrayClass);
-      } else {
-        key = keyPool.get(size, arrayClass);
-      }
+  public synchronized <T> T getExact(int size, Class<T> arrayClass) {
+    Key key = keyPool.get(size, arrayClass);
+    return getForKey(key, arrayClass);
+  }
 
-      result = getArrayForKey(key);
-      if (result != null) {
-        currentSize -= arrayAdapter.getArrayLength(result) * arrayAdapter.getElementSizeInBytes();
-        decrementArrayOfSize(arrayAdapter.getArrayLength(result), arrayClass);
-      }
+  @Override
+  public synchronized <T> T get(int size, Class<T> arrayClass) {
+    Integer possibleSize = getSizesForAdapter(arrayClass).ceilingKey(size);
+    final Key key;
+    if (mayFillRequest(size, possibleSize)) {
+      key = keyPool.get(possibleSize, arrayClass);
+    } else {
+      key = keyPool.get(size, arrayClass);
+    }
+    return getForKey(key, arrayClass);
+  }
+
+  private <T> T getForKey(Key key, Class<T> arrayClass) {
+    ArrayAdapterInterface<T> arrayAdapter = getAdapterFromType(arrayClass);
+    T result = getArrayForKey(key);
+    if (result != null) {
+      currentSize -= arrayAdapter.getArrayLength(result) * arrayAdapter.getElementSizeInBytes();
+      decrementArrayOfSize(arrayAdapter.getArrayLength(result), arrayClass);
     }
 
     if (result == null) {
       if (Log.isLoggable(arrayAdapter.getTag(), Log.VERBOSE)) {
-        Log.v(arrayAdapter.getTag(), "Allocated " + size + " bytes");
+        Log.v(arrayAdapter.getTag(), "Allocated " + key.size + " bytes");
       }
-      result = arrayAdapter.newArray(size);
+      result = arrayAdapter.newArray(key.size);
     }
     return result;
   }
 
-  @SuppressWarnings("unchecked")
+  // Our cast is safe because the Key is based on the type.
+  @SuppressWarnings({"unchecked", "TypeParameterUnusedInFormals"})
   @Nullable
   private <T> T getArrayForKey(Key key) {
     return (T) groupedMap.get(key);
@@ -122,7 +138,8 @@ public final class LruArrayPool implements ArrayPool {
   public synchronized void trimMemory(int level) {
     if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_BACKGROUND) {
       clearMemory();
-    } else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN) {
+    } else if (level >= android.content.ComponentCallbacks2.TRIM_MEMORY_UI_HIDDEN
+        || level == android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL) {
       evictToSize(maxSize / 2);
     }
   }
@@ -181,8 +198,8 @@ public final class LruArrayPool implements ArrayPool {
       } else if (arrayPoolClass.equals(byte[].class)) {
         adapter = new ByteArrayAdapter();
       } else {
-          throw new IllegalArgumentException("No array pool found for: "
-              + arrayPoolClass.getSimpleName());
+        throw new IllegalArgumentException(
+            "No array pool found for: " + arrayPoolClass.getSimpleName());
       }
       adapters.put(arrayPoolClass, adapter);
     }
@@ -204,7 +221,7 @@ public final class LruArrayPool implements ArrayPool {
   private static final class KeyPool extends BaseKeyPool<Key> {
 
     @Synthetic
-    KeyPool() { }
+    KeyPool() {}
 
     Key get(int size, Class<?> arrayClass) {
       Key result = get();

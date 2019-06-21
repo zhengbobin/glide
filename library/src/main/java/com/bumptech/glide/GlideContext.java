@@ -1,63 +1,110 @@
 package com.bumptech.glide;
 
-import android.annotation.TargetApi;
-import android.content.ComponentCallbacks2;
 import android.content.Context;
 import android.content.ContextWrapper;
-import android.content.res.Configuration;
-import android.os.Build;
-import android.os.Handler;
-import android.os.Looper;
 import android.widget.ImageView;
+import androidx.annotation.GuardedBy;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
+import com.bumptech.glide.Glide.RequestOptionsFactory;
 import com.bumptech.glide.load.engine.Engine;
+import com.bumptech.glide.load.engine.bitmap_recycle.ArrayPool;
+import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.RequestOptions;
 import com.bumptech.glide.request.target.ImageViewTargetFactory;
-import com.bumptech.glide.request.target.Target;
+import com.bumptech.glide.request.target.ViewTarget;
+import java.util.List;
+import java.util.Map;
+import java.util.Map.Entry;
 
 /**
  * Global context for all loads in Glide containing and exposing the various registries and classes
  * required to load resources.
  */
-@TargetApi(Build.VERSION_CODES.ICE_CREAM_SANDWICH)
-public class GlideContext extends ContextWrapper implements ComponentCallbacks2 {
-  private final Handler mainHandler;
+public class GlideContext extends ContextWrapper {
+  @VisibleForTesting
+  static final TransitionOptions<?, ?> DEFAULT_TRANSITION_OPTIONS =
+      new GenericTransitionOptions<>();
+
+  private final ArrayPool arrayPool;
   private final Registry registry;
   private final ImageViewTargetFactory imageViewTargetFactory;
-  private final RequestOptions defaultRequestOptions;
+  private final RequestOptionsFactory defaultRequestOptionsFactory;
+  private final List<RequestListener<Object>> defaultRequestListeners;
+  private final Map<Class<?>, TransitionOptions<?, ?>> defaultTransitionOptions;
   private final Engine engine;
-  private final ComponentCallbacks2 componentCallbacks;
+  private final boolean isLoggingRequestOriginsEnabled;
   private final int logLevel;
 
-  public GlideContext(Context context, Registry registry,
-      ImageViewTargetFactory imageViewTargetFactory, RequestOptions defaultRequestOptions,
-      Engine engine, ComponentCallbacks2 componentCallbacks, int logLevel) {
+  @Nullable
+  @GuardedBy("this")
+  private RequestOptions defaultRequestOptions;
+
+  public GlideContext(
+      @NonNull Context context,
+      @NonNull ArrayPool arrayPool,
+      @NonNull Registry registry,
+      @NonNull ImageViewTargetFactory imageViewTargetFactory,
+      @NonNull RequestOptionsFactory defaultRequestOptionsFactory,
+      @NonNull Map<Class<?>, TransitionOptions<?, ?>> defaultTransitionOptions,
+      @NonNull List<RequestListener<Object>> defaultRequestListeners,
+      @NonNull Engine engine,
+      boolean isLoggingRequestOriginsEnabled,
+      int logLevel) {
     super(context.getApplicationContext());
+    this.arrayPool = arrayPool;
     this.registry = registry;
     this.imageViewTargetFactory = imageViewTargetFactory;
-    this.defaultRequestOptions = defaultRequestOptions;
+    this.defaultRequestOptionsFactory = defaultRequestOptionsFactory;
+    this.defaultRequestListeners = defaultRequestListeners;
+    this.defaultTransitionOptions = defaultTransitionOptions;
     this.engine = engine;
-    this.componentCallbacks = componentCallbacks;
+    this.isLoggingRequestOriginsEnabled = isLoggingRequestOriginsEnabled;
     this.logLevel = logLevel;
-
-    mainHandler = new Handler(Looper.getMainLooper());
   }
 
-  public RequestOptions getDefaultRequestOptions() {
+  public List<RequestListener<Object>> getDefaultRequestListeners() {
+    return defaultRequestListeners;
+  }
+
+  public synchronized RequestOptions getDefaultRequestOptions() {
+    if (defaultRequestOptions == null) {
+      defaultRequestOptions = defaultRequestOptionsFactory.build().lock();
+    }
+
     return defaultRequestOptions;
   }
 
-  public <X> Target<X> buildImageViewTarget(ImageView imageView, Class<X> transcodeClass) {
+  @SuppressWarnings("unchecked")
+  @NonNull
+  public <T> TransitionOptions<?, T> getDefaultTransitionOptions(@NonNull Class<T> transcodeClass) {
+    TransitionOptions<?, ?> result = defaultTransitionOptions.get(transcodeClass);
+    if (result == null) {
+      for (Entry<Class<?>, TransitionOptions<?, ?>> value : defaultTransitionOptions.entrySet()) {
+        if (value.getKey().isAssignableFrom(transcodeClass)) {
+          result = value.getValue();
+        }
+      }
+    }
+    if (result == null) {
+      result = DEFAULT_TRANSITION_OPTIONS;
+    }
+    return (TransitionOptions<?, T>) result;
+  }
+
+  @NonNull
+  public <X> ViewTarget<ImageView, X> buildImageViewTarget(
+      @NonNull ImageView imageView, @NonNull Class<X> transcodeClass) {
     return imageViewTargetFactory.buildTarget(imageView, transcodeClass);
   }
 
-  public Handler getMainHandler() {
-    return mainHandler;
-  }
-
+  @NonNull
   public Engine getEngine() {
     return engine;
   }
 
+  @NonNull
   public Registry getRegistry() {
     return registry;
   }
@@ -66,18 +113,18 @@ public class GlideContext extends ContextWrapper implements ComponentCallbacks2 
     return logLevel;
   }
 
-  @Override
-  public void onTrimMemory(int level) {
-    componentCallbacks.onTrimMemory(level);
+  @NonNull
+  public ArrayPool getArrayPool() {
+    return arrayPool;
   }
 
-  @Override
-  public void onConfigurationChanged(Configuration newConfig) {
-    componentCallbacks.onConfigurationChanged(newConfig);
-  }
-
-  @Override
-  public void onLowMemory() {
-    componentCallbacks.onLowMemory();
+  /**
+   * Returns {@code true} if Glide should populate {@link
+   * com.bumptech.glide.load.engine.GlideException#setOrigin(Exception)} for failed requests.
+   *
+   * <p>This is an experimental API that may be removed in the future.
+   */
+  public boolean isLoggingRequestOriginsEnabled() {
+    return isLoggingRequestOriginsEnabled;
   }
 }

@@ -1,6 +1,6 @@
 package com.bumptech.glide.gifdecoder;
 
-import android.support.annotation.ColorInt;
+import androidx.annotation.ColorInt;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -26,7 +26,7 @@ public class GifHeader {
   int frameCount = 0;
 
   GifFrame currentFrame;
-  List<GifFrame> frames = new ArrayList<>();
+  final List<GifFrame> frames = new ArrayList<>();
   /** Logical screen size: Full image width. */
   int width;
   /** Logical screen size: Full image height. */

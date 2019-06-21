@@ -1,9 +1,13 @@
 package com.bumptech.glide.request;
 
 import android.graphics.drawable.Drawable;
-import android.os.Handler;
-import android.support.annotation.Nullable;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
+import com.bumptech.glide.load.DataSource;
+import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.request.target.SizeReadyCallback;
+import com.bumptech.glide.request.target.Target;
 import com.bumptech.glide.request.transition.Transition;
 import com.bumptech.glide.util.Util;
 import java.util.concurrent.CancellationException;
@@ -15,42 +19,38 @@ import java.util.concurrent.TimeoutException;
  * A {@link java.util.concurrent.Future} implementation for Glide that can be used to load resources
  * in a blocking manner on background threads.
  *
- * <p> Note - Unlike most targets, RequestFutureTargets can be used once and only once. Attempting
- * to reuse a RequestFutureTarget will probably result in undesirable behavior or exceptions.
- * Instead of reusing objects of this class, the pattern should be:
+ * <p>Note - Unlike most targets, RequestFutureTargets can be used once and only once. Attempting to
+ * reuse a RequestFutureTarget will probably result in undesirable behavior or exceptions. Instead
+ * of reusing objects of this class, the pattern should be:
  *
- * <pre>
- *     {@code
- *      FutureTarget<File> target = null;
- *      RequestManager requestManager = Glide.with(context);
- *      try {
- *        target = requestManager
- *           .downloadOnly()
- *           .load(model)
- *           .submit();
- *        File downloadedFile = target.get();
- *        // ... do something with the file (usually throws IOException)
- *      } catch (ExecutionException | InterruptedException | IOException e) {
- *        // ... bug reporting or recovery
- *      } finally {
- *        // make sure to cancel pending operations and free resources
- *        if (target != null) {
- *          target.cancel(true); // mayInterruptIfRunning
- *        }
- *      }
- *     }
- *     </pre>
- * The {@link #cancel(boolean)} call will cancel pending operations and
- * make sure that any resources used are recycled.
- * </p>
+ * <pre>{@code
+ * FutureTarget<File> target = null;
+ * RequestManager requestManager = Glide.with(context);
+ * try {
+ *   target = requestManager
+ *      .downloadOnly()
+ *      .load(model)
+ *      .submit();
+ *   File downloadedFile = target.get();
+ *   // ... do something with the file (usually throws IOException)
+ * } catch (ExecutionException | InterruptedException | IOException e) {
+ *   // ... bug reporting or recovery
+ * } finally {
+ *   // make sure to cancel pending operations and free resources
+ *   if (target != null) {
+ *     target.cancel(true); // mayInterruptIfRunning
+ *   }
+ * }
+ * }</pre>
+ *
+ * The {@link #cancel(boolean)} call will cancel pending operations and make sure that any resources
+ * used are recycled.
  *
  * @param <R> The type of the resource that will be loaded.
  */
-public class RequestFutureTarget<R> implements FutureTarget<R>,
-    Runnable {
+public class RequestFutureTarget<R> implements FutureTarget<R>, RequestListener<R> {
   private static final Waiter DEFAULT_WAITER = new Waiter();
 
-  private final Handler mainHandler;
   private final int width;
   private final int height;
   // Exists for testing only.
@@ -62,17 +62,14 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
   private boolean isCancelled;
   private boolean resultReceived;
   private boolean loadFailed;
+  @Nullable private GlideException exception;
 
-  /**
-   * Constructor for a RequestFutureTarget. Should not be used directly.
-   */
-  public RequestFutureTarget(Handler mainHandler, int width, int height) {
-    this(mainHandler, width, height, true, DEFAULT_WAITER);
+  /** Constructor for a RequestFutureTarget. Should not be used directly. */
+  public RequestFutureTarget(int width, int height) {
+    this(width, height, true, DEFAULT_WAITER);
   }
 
-  RequestFutureTarget(Handler mainHandler, int width, int height, boolean assertBackgroundThread,
-      Waiter waiter) {
-    this.mainHandler = mainHandler;
+  RequestFutureTarget(int width, int height, boolean assertBackgroundThread, Waiter waiter) {
     this.width = width;
     this.height = height;
     this.assertBackgroundThread = assertBackgroundThread;
@@ -86,8 +83,9 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
     }
     isCancelled = true;
     waiter.notifyAll(this);
-    if (mayInterruptIfRunning) {
-      clearOnMainThread();
+    if (mayInterruptIfRunning && request != null) {
+      request.clear();
+      request = null;
     }
     return true;
   }
@@ -99,7 +97,7 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
 
   @Override
   public synchronized boolean isDone() {
-    return isCancelled || resultReceived;
+    return isCancelled || resultReceived || loadFailed;
   }
 
   @Override
@@ -112,72 +110,56 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
   }
 
   @Override
-  public R get(long time, TimeUnit timeUnit)
+  public R get(long time, @NonNull TimeUnit timeUnit)
       throws InterruptedException, ExecutionException, TimeoutException {
     return doGet(timeUnit.toMillis(time));
   }
 
-  /**
-   * A callback that should never be invoked directly.
-   */
+  /** A callback that should never be invoked directly. */
   @Override
-  public void getSize(SizeReadyCallback cb) {
+  public void getSize(@NonNull SizeReadyCallback cb) {
     cb.onSizeReady(width, height);
   }
 
   @Override
-  public void removeCallback(SizeReadyCallback cb) {
+  public void removeCallback(@NonNull SizeReadyCallback cb) {
     // Do nothing because we do not retain references to SizeReadyCallbacks.
   }
 
-  /**
-   * {@inheritDoc}
-   */
   @Override
-  public void setRequest(@Nullable Request request) {
+  public synchronized void setRequest(@Nullable Request request) {
     this.request = request;
   }
 
   @Override
   @Nullable
-  public Request getRequest() {
+  public synchronized Request getRequest() {
     return request;
   }
 
-  /**
-   * A callback that should never be invoked directly.
-   */
+  /** A callback that should never be invoked directly. */
   @Override
-  public void onLoadCleared(Drawable placeholder) {
+  public void onLoadCleared(@Nullable Drawable placeholder) {
     // Do nothing.
   }
 
-  /**
-   * A callback that should never be invoked directly.
-   */
+  /** A callback that should never be invoked directly. */
   @Override
-  public void onLoadStarted(Drawable placeholder) {
+  public void onLoadStarted(@Nullable Drawable placeholder) {
     // Do nothing.
   }
 
-  /**
-   * A callback that should never be invoked directly.
-   */
+  /** A callback that should never be invoked directly. */
   @Override
-  public synchronized void onLoadFailed(Drawable errorDrawable) {
-    loadFailed = true;
-    waiter.notifyAll(this);
+  public synchronized void onLoadFailed(@Nullable Drawable errorDrawable) {
+    // Ignored, synchronized for backwards compatibility.
   }
 
-  /**
-   * A callback that should never be invoked directly.
-   */
+  /** A callback that should never be invoked directly. */
   @Override
-  public synchronized void onResourceReady(R resource, Transition<? super R> transition) {
-    // We might get a null result.
-    resultReceived = true;
-    this.resource = resource;
-    waiter.notifyAll(this);
+  public synchronized void onResourceReady(
+      @NonNull R resource, @Nullable Transition<? super R> transition) {
+    // Ignored, synchronized for backwards compatibility.
   }
 
   private synchronized R doGet(Long timeoutMillis)
@@ -189,7 +171,7 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
     if (isCancelled) {
       throw new CancellationException();
     } else if (loadFailed) {
-      throw new ExecutionException(new IllegalStateException("Load failed"));
+      throw new ExecutionException(exception);
     } else if (resultReceived) {
       return resource;
     }
@@ -197,13 +179,18 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
     if (timeoutMillis == null) {
       waiter.waitForTimeout(this, 0);
     } else if (timeoutMillis > 0) {
-      waiter.waitForTimeout(this, timeoutMillis);
+      long now = System.currentTimeMillis();
+      long deadline = now + timeoutMillis;
+      while (!isDone() && now < deadline) {
+        waiter.waitForTimeout(this, deadline - now);
+        now = System.currentTimeMillis();
+      }
     }
 
     if (Thread.interrupted()) {
       throw new InterruptedException();
     } else if (loadFailed) {
-      throw new ExecutionException(new IllegalStateException("Load failed"));
+      throw new ExecutionException(exception);
     } else if (isCancelled) {
       throw new CancellationException();
     } else if (!resultReceived) {
@@ -211,21 +198,6 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
     }
 
     return resource;
-  }
-
-  /**
-   * A callback that should never be invoked directly.
-   */
-  @Override
-  public void run() {
-    if (request != null) {
-      request.clear();
-      request = null;
-    }
-  }
-
-  private void clearOnMainThread() {
-    mainHandler.post(this);
   }
 
   @Override
@@ -243,14 +215,35 @@ public class RequestFutureTarget<R> implements FutureTarget<R>,
     // Do nothing.
   }
 
-  // Visible for testing.
-  static class Waiter {
+  @Override
+  public synchronized boolean onLoadFailed(
+      @Nullable GlideException e, Object model, Target<R> target, boolean isFirstResource) {
+    loadFailed = true;
+    exception = e;
+    waiter.notifyAll(this);
+    return false;
+  }
 
-    public void waitForTimeout(Object toWaitOn, long timeoutMillis) throws InterruptedException {
+  @Override
+  public synchronized boolean onResourceReady(
+      R resource, Object model, Target<R> target, DataSource dataSource, boolean isFirstResource) {
+    // We might get a null result.
+    resultReceived = true;
+    this.resource = resource;
+    waiter.notifyAll(this);
+    return false;
+  }
+
+  @VisibleForTesting
+  static class Waiter {
+    // This is a simple wrapper class that is used to enable testing. The call to the wrapping class
+    // is waited on appropriately.
+    @SuppressWarnings("WaitNotInLoop")
+    void waitForTimeout(Object toWaitOn, long timeoutMillis) throws InterruptedException {
       toWaitOn.wait(timeoutMillis);
     }
 
-    public void notifyAll(Object toNotify) {
+    void notifyAll(Object toNotify) {
       toNotify.notifyAll();
     }
   }

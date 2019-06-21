@@ -1,8 +1,9 @@
 package com.bumptech.glide.load.model;
 
 import android.net.Uri;
-import android.support.annotation.Nullable;
 import android.text.TextUtils;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.bumptech.glide.load.Key;
 import com.bumptech.glide.util.Preconditions;
 import java.net.MalformedURLException;
@@ -15,18 +16,17 @@ import java.util.Map;
  * escaped and avoiding unnecessary URL instantiations for loaders that require only string urls
  * rather than URL objects.
  *
- * <p>  Users wishing to replace the class for handling URLs must register a factory using
- * GlideUrl. </p>
+ * <p>Users wishing to replace the class for handling URLs must register a factory using GlideUrl.
  *
- * <p> To obtain a properly escaped URL, call {@link #toURL()}. To obtain a properly escaped string
+ * <p>To obtain a properly escaped URL, call {@link #toURL()}. To obtain a properly escaped string
  * URL, call {@link #toStringUrl()}. To obtain a less safe, but less expensive to calculate cache
- * key, call {@link #getCacheKey()}. </p>
+ * key, call {@link #getCacheKey()}.
  *
- * <p> This class can also optionally wrap {@link com.bumptech.glide.load.model.Headers} for
- * convenience. </p>
+ * <p>This class can also optionally wrap {@link com.bumptech.glide.load.model.Headers} for
+ * convenience.
  */
 public class GlideUrl implements Key {
-  private static final String ALLOWED_URI_CHARS = "@#&=*+-_.,:!?()/~'%";
+  private static final String ALLOWED_URI_CHARS = "@#&=*+-_.,:!?()/~'%;$";
   private final Headers headers;
   @Nullable private final URL url;
   @Nullable private final String stringUrl;
@@ -86,16 +86,14 @@ public class GlideUrl implements Key {
     if (TextUtils.isEmpty(safeStringUrl)) {
       String unsafeStringUrl = stringUrl;
       if (TextUtils.isEmpty(unsafeStringUrl)) {
-        unsafeStringUrl = url.toString();
+        unsafeStringUrl = Preconditions.checkNotNull(url).toString();
       }
       safeStringUrl = Uri.encode(unsafeStringUrl, ALLOWED_URI_CHARS);
     }
     return safeStringUrl;
   }
 
-  /**
-   * Returns a non-null {@link Map} containing headers.
-   */
+  /** Returns a non-null {@link Map} containing headers. */
   public Map<String, String> getHeaders() {
     return headers.getHeaders();
   }
@@ -103,13 +101,14 @@ public class GlideUrl implements Key {
   /**
    * Returns an inexpensive to calculate {@link String} suitable for use as a disk cache key.
    *
-   * <p> This method does not include headers. </p>
+   * <p>This method does not include headers.
    *
-   * <p> Unlike {@link #toStringUrl()}} and {@link #toURL()}, this method does not escape
-   * input. </p>
+   * <p>Unlike {@link #toStringUrl()}} and {@link #toURL()}, this method does not escape input.
    */
+  // Public API.
+  @SuppressWarnings("WeakerAccess")
   public String getCacheKey() {
-    return stringUrl != null ? stringUrl : url.toString();
+    return stringUrl != null ? stringUrl : Preconditions.checkNotNull(url).toString();
   }
 
   @Override
@@ -118,7 +117,7 @@ public class GlideUrl implements Key {
   }
 
   @Override
-  public void updateDiskCacheKey(MessageDigest messageDigest) {
+  public void updateDiskCacheKey(@NonNull MessageDigest messageDigest) {
     messageDigest.update(getCacheKeyBytes());
   }
 
@@ -133,8 +132,7 @@ public class GlideUrl implements Key {
   public boolean equals(Object o) {
     if (o instanceof GlideUrl) {
       GlideUrl other = (GlideUrl) o;
-      return getCacheKey().equals(other.getCacheKey())
-          && headers.equals(other.headers);
+      return getCacheKey().equals(other.getCacheKey()) && headers.equals(other.headers);
     }
     return false;
   }

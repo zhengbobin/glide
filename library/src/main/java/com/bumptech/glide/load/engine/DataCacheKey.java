@@ -1,22 +1,21 @@
 package com.bumptech.glide.load.engine;
 
+import androidx.annotation.NonNull;
 import com.bumptech.glide.load.Key;
 import java.security.MessageDigest;
 
-/**
- * A cache key for original source data + any requested signature.
- */
+/** A cache key for original source data + any requested signature. */
 final class DataCacheKey implements Key {
 
   private final Key sourceKey;
   private final Key signature;
 
-  public DataCacheKey(Key sourceKey, Key signature) {
+  DataCacheKey(Key sourceKey, Key signature) {
     this.sourceKey = sourceKey;
     this.signature = signature;
   }
 
-  public Key getSourceKey() {
+  Key getSourceKey() {
     return sourceKey;
   }
 
@@ -38,14 +37,11 @@ final class DataCacheKey implements Key {
 
   @Override
   public String toString() {
-    return "DataCacheKey{"
-        + "sourceKey=" + sourceKey
-        + ", signature=" + signature
-        + '}';
+    return "DataCacheKey{" + "sourceKey=" + sourceKey + ", signature=" + signature + '}';
   }
 
   @Override
-  public void updateDiskCacheKey(MessageDigest messageDigest) {
+  public void updateDiskCacheKey(@NonNull MessageDigest messageDigest) {
     sourceKey.updateDiskCacheKey(messageDigest);
     signature.updateDiskCacheKey(messageDigest);
   }

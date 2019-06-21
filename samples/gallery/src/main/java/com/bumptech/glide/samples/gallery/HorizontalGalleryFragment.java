@@ -1,20 +1,19 @@
 package com.bumptech.glide.samples.gallery;
 
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
-import android.support.v4.app.LoaderManager;
-import android.support.v4.content.Loader;
-import android.support.v7.widget.GridLayoutManager;
-import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
+import androidx.annotation.NonNull;
+import androidx.fragment.app.Fragment;
+import androidx.loader.app.LoaderManager;
+import androidx.loader.content.Loader;
+import androidx.recyclerview.widget.GridLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.integration.recyclerview.RecyclerViewPreloader;
 import java.util.List;
 
-/**
- * Displays media store data in a recycler view.
- */
+/** Displays media store data in a recycler view. */
 public class HorizontalGalleryFragment extends Fragment
     implements LoaderManager.LoaderCallbacks<List<MediaStoreData>> {
 
@@ -27,8 +26,8 @@ public class HorizontalGalleryFragment extends Fragment
   }
 
   @Override
-  public View onCreateView(LayoutInflater inflater, ViewGroup container,
-      Bundle savedInstanceState) {
+  public View onCreateView(
+      @NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
     View result = inflater.inflate(R.layout.recycler_view, container, false);
     recyclerView = (RecyclerView) result.findViewById(R.id.recycler_view);
     GridLayoutManager layoutManager = new GridLayoutManager(getActivity(), 1);
@@ -45,11 +44,10 @@ public class HorizontalGalleryFragment extends Fragment
   }
 
   @Override
-  public void onLoadFinished(Loader<List<MediaStoreData>> loader,
-      List<MediaStoreData> mediaStoreData) {
+  public void onLoadFinished(
+      Loader<List<MediaStoreData>> loader, List<MediaStoreData> mediaStoreData) {
     GlideRequests glideRequests = GlideApp.with(this);
-    RecyclerAdapter adapter =
-        new RecyclerAdapter(getActivity(), mediaStoreData, glideRequests);
+    RecyclerAdapter adapter = new RecyclerAdapter(getActivity(), mediaStoreData, glideRequests);
     RecyclerViewPreloader<MediaStoreData> preloader =
         new RecyclerViewPreloader<>(glideRequests, adapter, adapter, 3);
     recyclerView.addOnScrollListener(preloader);

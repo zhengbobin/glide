@@ -7,14 +7,16 @@ import android.graphics.Color;
 import android.graphics.drawable.ColorDrawable;
 import android.graphics.drawable.Drawable;
 import android.os.Bundle;
-import android.support.v4.app.Fragment;
-import android.support.v7.widget.LinearLayoutManager;
-import android.support.v7.widget.RecyclerView;
 import android.view.LayoutInflater;
 import android.view.View;
 import android.view.ViewGroup;
 import android.widget.ImageView;
 import android.widget.TextView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.fragment.app.Fragment;
+import androidx.recyclerview.widget.LinearLayoutManager;
+import androidx.recyclerview.widget.RecyclerView;
 import com.bumptech.glide.ListPreloader;
 import com.bumptech.glide.RequestBuilder;
 import com.bumptech.glide.integration.recyclerview.RecyclerViewPreloader;
@@ -53,11 +55,11 @@ public class FlickrPhotoList extends Fragment implements PhotoViewer {
   }
 
   @Override
-  public View onCreateView(LayoutInflater inflater, ViewGroup container,
-      Bundle savedInstanceState) {
+  public View onCreateView(
+      @NonNull LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
     final View result = inflater.inflate(R.layout.flickr_photo_list, container, false);
 
-    list = (RecyclerView) result.findViewById(R.id.flickr_photo_list);
+    list = result.findViewById(R.id.flickr_photo_list);
     layoutManager = new LinearLayoutManager(getActivity());
     list.setLayoutManager(layoutManager);
     adapter = new FlickrPhotoListAdapter();
@@ -75,24 +77,24 @@ public class FlickrPhotoList extends Fragment implements PhotoViewer {
     }
 
     final GlideRequests glideRequests = GlideApp.with(this);
-    fullRequest = glideRequests
-        .asDrawable()
-        .centerCrop()
-        .placeholder(new ColorDrawable(Color.GRAY));
+    fullRequest =
+        glideRequests.asDrawable().centerCrop().placeholder(new ColorDrawable(Color.GRAY));
 
-    thumbRequest = glideRequests
-        .asDrawable()
-        .diskCacheStrategy(DiskCacheStrategy.DATA)
-        .override(Api.SQUARE_THUMB_SIZE)
-        .transition(withCrossFade());
+    thumbRequest =
+        glideRequests
+            .asDrawable()
+            .diskCacheStrategy(DiskCacheStrategy.DATA)
+            .override(Api.SQUARE_THUMB_SIZE)
+            .transition(withCrossFade());
 
-    list.setRecyclerListener(new RecyclerView.RecyclerListener() {
-      @Override
-      public void onViewRecycled(RecyclerView.ViewHolder holder) {
-        PhotoTitleViewHolder vh = (PhotoTitleViewHolder) holder;
-        glideRequests.clear(vh.imageView);
-      }
-    });
+    list.setRecyclerListener(
+        new RecyclerView.RecyclerListener() {
+          @Override
+          public void onViewRecycled(RecyclerView.ViewHolder holder) {
+            PhotoTitleViewHolder vh = (PhotoTitleViewHolder) holder;
+            glideRequests.clear(vh.imageView);
+          }
+        });
 
     if (savedInstanceState != null) {
       int index = savedInstanceState.getInt(STATE_POSITION_INDEX);
@@ -104,7 +106,7 @@ public class FlickrPhotoList extends Fragment implements PhotoViewer {
   }
 
   @Override
-  public void onSaveInstanceState(Bundle outState) {
+  public void onSaveInstanceState(@NonNull Bundle outState) {
     super.onSaveInstanceState(outState);
     if (list != null) {
       int index = layoutManager.findFirstVisibleItemPosition();
@@ -115,16 +117,16 @@ public class FlickrPhotoList extends Fragment implements PhotoViewer {
     }
   }
 
-  private class FlickrPhotoListAdapter extends RecyclerView.Adapter<PhotoTitleViewHolder>
+  private final class FlickrPhotoListAdapter extends RecyclerView.Adapter<PhotoTitleViewHolder>
       implements ListPreloader.PreloadModelProvider<Photo> {
     private final LayoutInflater inflater;
     private List<Photo> photos = Collections.emptyList();
 
-    public FlickrPhotoListAdapter() {
+    FlickrPhotoListAdapter() {
       this.inflater = LayoutInflater.from(getActivity());
     }
 
-    public void setPhotos(List<Photo> photos) {
+    void setPhotos(List<Photo> photos) {
       this.photos = photos;
       notifyDataSetChanged();
     }
@@ -140,17 +142,16 @@ public class FlickrPhotoList extends Fragment implements PhotoViewer {
     @Override
     public void onBindViewHolder(PhotoTitleViewHolder holder, int position) {
       final Photo current = photos.get(position);
-      fullRequest.load(current)
-          .thumbnail(thumbRequest.load(current))
-          .into(holder.imageView);
+      fullRequest.load(current).thumbnail(thumbRequest.load(current)).into(holder.imageView);
 
-      holder.imageView.setOnClickListener(new View.OnClickListener() {
-        @Override
-        public void onClick(View view) {
-          Intent intent = FullscreenActivity.getIntent(getActivity(), current);
-          startActivity(intent);
-        }
-      });
+      holder.imageView.setOnClickListener(
+          new View.OnClickListener() {
+            @Override
+            public void onClick(View view) {
+              Intent intent = FullscreenActivity.getIntent(getActivity(), current);
+              startActivity(intent);
+            }
+          });
 
       holder.titleView.setText(current.getTitle());
     }
@@ -165,25 +166,27 @@ public class FlickrPhotoList extends Fragment implements PhotoViewer {
       return photos.size();
     }
 
+    @NonNull
     @Override
     public List<Photo> getPreloadItems(int position) {
       return photos.subList(position, position + 1);
     }
 
+    @Nullable
     @Override
-    public RequestBuilder<Drawable> getPreloadRequestBuilder(Photo item) {
+    public RequestBuilder<Drawable> getPreloadRequestBuilder(@NonNull Photo item) {
       return fullRequest.thumbnail(thumbRequest.load(item)).load(item);
     }
   }
 
-  private static class PhotoTitleViewHolder extends RecyclerView.ViewHolder {
+  private static final class PhotoTitleViewHolder extends RecyclerView.ViewHolder {
     private final TextView titleView;
     private final ImageView imageView;
 
-    public PhotoTitleViewHolder(View itemView) {
+    PhotoTitleViewHolder(View itemView) {
       super(itemView);
-      imageView = (ImageView) itemView.findViewById(R.id.photo_view);
-      titleView = (TextView) itemView.findViewById(R.id.title_view);
+      imageView = itemView.findViewById(R.id.photo_view);
+      titleView = itemView.findViewById(R.id.title_view);
     }
   }
 }

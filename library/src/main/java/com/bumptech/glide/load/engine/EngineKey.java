@@ -1,5 +1,6 @@
 package com.bumptech.glide.load.engine;
 
+import androidx.annotation.NonNull;
 import com.bumptech.glide.load.Key;
 import com.bumptech.glide.load.Options;
 import com.bumptech.glide.load.Transformation;
@@ -7,9 +8,7 @@ import com.bumptech.glide.util.Preconditions;
 import java.security.MessageDigest;
 import java.util.Map;
 
-/**
- * An in memory only cache key used to multiplex loads.
- */
+/** An in memory only cache key used to multiplex loads. */
 class EngineKey implements Key {
   private final Object model;
   private final int width;
@@ -21,9 +20,15 @@ class EngineKey implements Key {
   private final Options options;
   private int hashCode;
 
-  public EngineKey(Object model, Key signature, int width, int height,
-      Map<Class<?>, Transformation<?>> transformations, Class<?> resourceClass,
-      Class<?> transcodeClass, Options options) {
+  EngineKey(
+      Object model,
+      Key signature,
+      int width,
+      int height,
+      Map<Class<?>, Transformation<?>> transformations,
+      Class<?> resourceClass,
+      Class<?> transcodeClass,
+      Options options) {
     this.model = Preconditions.checkNotNull(model);
     this.signature = Preconditions.checkNotNull(signature, "Signature must not be null");
     this.width = width;
@@ -70,20 +75,29 @@ class EngineKey implements Key {
   @Override
   public String toString() {
     return "EngineKey{"
-        + "model=" + model
-        + ", width=" + width
-        + ", height=" + height
-        + ", resourceClass=" + resourceClass
-        + ", transcodeClass=" + transcodeClass
-        + ", signature=" + signature
-        + ", hashCode=" + hashCode
-        + ", transformations=" + transformations
-        + ", options=" + options
+        + "model="
+        + model
+        + ", width="
+        + width
+        + ", height="
+        + height
+        + ", resourceClass="
+        + resourceClass
+        + ", transcodeClass="
+        + transcodeClass
+        + ", signature="
+        + signature
+        + ", hashCode="
+        + hashCode
+        + ", transformations="
+        + transformations
+        + ", options="
+        + options
         + '}';
   }
 
   @Override
-  public void updateDiskCacheKey(MessageDigest messageDigest) {
+  public void updateDiskCacheKey(@NonNull MessageDigest messageDigest) {
     throw new UnsupportedOperationException();
   }
 }

@@ -1,9 +1,12 @@
 package com.bumptech.glide;
 
-import android.support.annotation.Nullable;
+import android.graphics.drawable.Drawable;
 import android.widget.AbsListView;
-import com.bumptech.glide.request.target.BaseTarget;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import com.bumptech.glide.request.Request;
 import com.bumptech.glide.request.target.SizeReadyCallback;
+import com.bumptech.glide.request.target.Target;
 import com.bumptech.glide.request.transition.Transition;
 import com.bumptech.glide.util.Synthetic;
 import com.bumptech.glide.util.Util;
@@ -16,15 +19,14 @@ import java.util.Queue;
  * the appearance of an infinitely large image cache, depending on scrolling speed, cpu speed, and
  * cache size.
  *
- * <p> Must be put using
- * {@link AbsListView#setOnScrollListener(android.widget.AbsListView.OnScrollListener)}, or have its
+ * <p>Must be put using {@link
+ * AbsListView#setOnScrollListener(android.widget.AbsListView.OnScrollListener)}, or have its
  * corresponding methods called from another {@link android.widget.AbsListView.OnScrollListener} to
- * function. </p>
+ * function.
  *
  * @param <T> The type of the model being displayed in the list.
  */
 public class ListPreloader<T> implements AbsListView.OnScrollListener {
-
   private final int maxPreload;
   private final PreloadTargetQueue preloadTargetQueue;
   private final RequestManager requestManager;
@@ -33,7 +35,7 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
 
   private int lastEnd;
   private int lastStart;
-  private int lastFirstVisible;
+  private int lastFirstVisible = -1;
   private int totalItemCount;
 
   private boolean isIncreasing = true;
@@ -47,25 +49,45 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
   public interface PreloadModelProvider<U> {
 
     /**
-     * Returns a non null list of all models that need to be loaded for the list to display adapter
-     * items in positions between {@code start} and {@code end}.
+     * Returns a {@link List} of models that need to be loaded for the list to display adapter items
+     * in positions between {@code start} and {@code end}.
      *
-     * <p> A list of any size can be returned so there can be multiple models per adapter position.
-     * </p>
+     * <p>A list of any size can be returned so there can be multiple models per adapter position.
+     *
+     * <p>Every model returned by this method is expected to produce a valid {@link RequestBuilder}
+     * in {@link #getPreloadRequestBuilder(Object)}. If that's not possible for any set of models,
+     * avoid including them in the {@link List} returned by this method.
+     *
+     * <p>Although it's acceptable for the returned {@link List} to contain {@code null} models,
+     * it's best to filter them from the list instead of adding {@code null} to avoid unnecessary
+     * logic and expanding the size of the {@link List}
      *
      * @param position The adapter position.
      */
+    @NonNull
     List<U> getPreloadItems(int position);
 
     /**
-     * Returns a non null {@link RequestBuilder} for a given item. Must exactly match the request
-     * used to load the resource in the list.
+     * Returns a {@link RequestBuilder} for a given item on which {@link
+     * RequestBuilder#load(Object)}} has been called or {@code null} if no valid load can be
+     * started.
      *
-     * <p> The target and context will be provided by the preloader. </p>
+     * <p>For the preloader to be effective, the {@link RequestBuilder} returned here must use
+     * exactly the same size and set of options as the {@link RequestBuilder} used when the ``View``
+     * is bound. You may need to specify a size in both places to ensure that the width and height
+     * match exactly. If so, you can use {@link
+     * com.bumptech.glide.request.RequestOptions#override(int, int)} to do so.
+     *
+     * <p>The target and context will be provided by the preloader.
+     *
+     * <p>If {@link RequestBuilder#load(Object)} is not called by this method, the preloader will
+     * trigger a {@link RuntimeException}. If you don't want to load a particular item or position,
+     * filter it from the list returned by {@link #getPreloadItems(int)}.
      *
      * @param item The model to load.
      */
-    RequestBuilder getPreloadRequestBuilder(U item);
+    @Nullable
+    RequestBuilder<?> getPreloadRequestBuilder(@NonNull U item);
   }
 
   /**
@@ -80,13 +102,14 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
      * Returns the size of the view in the list where the resources will be displayed in pixels in
      * the format [x, y], or {@code null} if no size is currently available.
      *
-     * <p> Note - The dimensions returned here must precisely match those of the view in the list.
-     * </p>
+     * <p>Note - The dimensions returned here must precisely match those of the view in the list.
+     *
+     * <p>If this method returns {@code null}, then no request will be started for the given item.
      *
      * @param item A model
      */
     @Nullable
-    int[] getPreloadSize(T item, int adapterPosition, int perItemPosition);
+    int[] getPreloadSize(@NonNull T item, int adapterPosition, int perItemPosition);
   }
 
   /**
@@ -94,12 +117,15 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
    * the dimensions of images to preload, the list of models to preload for a given position, and
    * the request to use to load images.
    *
-   * @param preloadModelProvider     Provides models to load and requests capable of loading them.
+   * @param preloadModelProvider Provides models to load and requests capable of loading them.
    * @param preloadDimensionProvider Provides the dimensions of images to load.
-   * @param maxPreload               Maximum number of items to preload.
+   * @param maxPreload Maximum number of items to preload.
    */
-  public ListPreloader(RequestManager requestManager, PreloadModelProvider<T> preloadModelProvider,
-      PreloadSizeProvider<T> preloadDimensionProvider, int maxPreload) {
+  public ListPreloader(
+      @NonNull RequestManager requestManager,
+      @NonNull PreloadModelProvider<T> preloadModelProvider,
+      @NonNull PreloadSizeProvider<T> preloadDimensionProvider,
+      int maxPreload) {
     this.requestManager = requestManager;
     this.preloadModelProvider = preloadModelProvider;
     this.preloadDimensionProvider = preloadDimensionProvider;
@@ -113,8 +139,8 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
   }
 
   @Override
-  public void onScroll(AbsListView absListView, int firstVisible, int visibleCount,
-      int totalCount) {
+  public void onScroll(
+      AbsListView absListView, int firstVisible, int visibleCount, int totalCount) {
     totalItemCount = totalCount;
     if (firstVisible > lastFirstVisible) {
       preload(firstVisible + visibleCount, true);
@@ -148,12 +174,12 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
     if (from < to) {
       // Increasing
       for (int i = start; i < end; i++) {
-        preloadAdapterPosition(this.preloadModelProvider.getPreloadItems(i), i, true);
+        preloadAdapterPosition(preloadModelProvider.getPreloadItems(i), i, true);
       }
     } else {
       // Decreasing
       for (int i = end - 1; i >= start; i--) {
-        preloadAdapterPosition(this.preloadModelProvider.getPreloadItems(i), i, false);
+        preloadAdapterPosition(preloadModelProvider.getPreloadItems(i), i, false);
       }
     }
 
@@ -175,13 +201,21 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
   }
 
   @SuppressWarnings("unchecked")
-  private void preloadItem(T item, int position, int i) {
-    final int[] dimensions = this.preloadDimensionProvider.getPreloadSize(item, position, i);
-    if (dimensions != null) {
-      RequestBuilder<Object> preloadRequestBuilder =
-          this.preloadModelProvider.getPreloadRequestBuilder(item);
-      preloadRequestBuilder.into(preloadTargetQueue.next(dimensions[0], dimensions[1]));
+  private void preloadItem(@Nullable T item, int position, int perItemPosition) {
+    if (item == null) {
+      return;
     }
+    int[] dimensions = preloadDimensionProvider.getPreloadSize(item, position, perItemPosition);
+    if (dimensions == null) {
+      return;
+    }
+    RequestBuilder<Object> preloadRequestBuilder =
+        (RequestBuilder<Object>) preloadModelProvider.getPreloadRequestBuilder(item);
+    if (preloadRequestBuilder == null) {
+      return;
+    }
+
+    preloadRequestBuilder.into(preloadTargetQueue.next(dimensions[0], dimensions[1]));
   }
 
   private void cancelAll() {
@@ -193,7 +227,9 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
   private static final class PreloadTargetQueue {
     private final Queue<PreloadTarget> queue;
 
-    public PreloadTargetQueue(int size) {
+    // The loop is short and the only point is to create the objects.
+    @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
+    PreloadTargetQueue(int size) {
       queue = Util.createQueue(size);
 
       for (int i = 0; i < size; i++) {
@@ -210,26 +246,69 @@ public class ListPreloader<T> implements AbsListView.OnScrollListener {
     }
   }
 
-  private static class PreloadTarget extends BaseTarget<Object> {
+  private static final class PreloadTarget implements Target<Object> {
     @Synthetic int photoHeight;
     @Synthetic int photoWidth;
+    @Nullable private Request request;
 
     @Synthetic
-    PreloadTarget() { }
+    PreloadTarget() {}
 
     @Override
-    public void onResourceReady(Object resource, Transition<? super Object> transition) {
+    public void onLoadStarted(@Nullable Drawable placeholder) {
       // Do nothing.
     }
 
     @Override
-    public void getSize(SizeReadyCallback cb) {
+    public void onLoadFailed(@Nullable Drawable errorDrawable) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onResourceReady(
+        @NonNull Object resource, @Nullable Transition<? super Object> transition) {
+      // Do nothing.
+    }
+
+    @Override
+    public void onLoadCleared(@Nullable Drawable placeholder) {
+      // Do nothing.
+    }
+
+    @Override
+    public void getSize(@NonNull SizeReadyCallback cb) {
       cb.onSizeReady(photoWidth, photoHeight);
     }
 
     @Override
-    public void removeCallback(SizeReadyCallback cb) {
+    public void removeCallback(@NonNull SizeReadyCallback cb) {
       // Do nothing because we don't retain references to SizeReadyCallbacks.
+    }
+
+    @Override
+    public void setRequest(@Nullable Request request) {
+      this.request = request;
+    }
+
+    @Nullable
+    @Override
+    public Request getRequest() {
+      return request;
+    }
+
+    @Override
+    public void onStart() {
+      // Do nothing.
+    }
+
+    @Override
+    public void onStop() {
+      // Do nothing.
+    }
+
+    @Override
+    public void onDestroy() {
+      // Do nothing.
     }
   }
 }

@@ -1,5 +1,6 @@
 package com.bumptech.glide;
 
+import androidx.annotation.NonNull;
 import com.bumptech.glide.request.transition.TransitionFactory;
 import com.bumptech.glide.request.transition.ViewPropertyTransition;
 
@@ -9,14 +10,16 @@ import com.bumptech.glide.request.transition.ViewPropertyTransition;
  *
  * @param <TranscodeType> The type of the resource that will be displayed.
  */
-@SuppressWarnings("PMD.UseUtilityClass")
-public final class GenericTransitionOptions<TranscodeType> extends
-    TransitionOptions<GenericTransitionOptions<TranscodeType>, TranscodeType> {
+// Public API.
+@SuppressWarnings({"PMD.UseUtilityClass", "unused"})
+public final class GenericTransitionOptions<TranscodeType>
+    extends TransitionOptions<GenericTransitionOptions<TranscodeType>, TranscodeType> {
   /**
    * Removes any existing animation put on the builder.
    *
    * @see GenericTransitionOptions#dontTransition()
    */
+  @NonNull
   public static <TranscodeType> GenericTransitionOptions<TranscodeType> withNoTransition() {
     return new GenericTransitionOptions<TranscodeType>().dontTransition();
   }
@@ -26,8 +29,8 @@ public final class GenericTransitionOptions<TranscodeType> extends
    *
    * @see GenericTransitionOptions#transition(int)
    */
-  public static <TranscodeType> GenericTransitionOptions<TranscodeType> with(
-      int viewAnimationId) {
+  @NonNull
+  public static <TranscodeType> GenericTransitionOptions<TranscodeType> with(int viewAnimationId) {
     return new GenericTransitionOptions<TranscodeType>().transition(viewAnimationId);
   }
 
@@ -36,8 +39,9 @@ public final class GenericTransitionOptions<TranscodeType> extends
    *
    * @see GenericTransitionOptions#transition(ViewPropertyTransition.Animator)
    */
+  @NonNull
   public static <TranscodeType> GenericTransitionOptions<TranscodeType> with(
-      ViewPropertyTransition.Animator animator) {
+      @NonNull ViewPropertyTransition.Animator animator) {
     return new GenericTransitionOptions<TranscodeType>().transition(animator);
   }
 
@@ -46,8 +50,9 @@ public final class GenericTransitionOptions<TranscodeType> extends
    *
    * @see GenericTransitionOptions#transition(TransitionFactory)
    */
+  @NonNull
   public static <TranscodeType> GenericTransitionOptions<TranscodeType> with(
-      TransitionFactory<? super TranscodeType> transitionFactory) {
+      @NonNull TransitionFactory<? super TranscodeType> transitionFactory) {
     return new GenericTransitionOptions<TranscodeType>().transition(transitionFactory);
   }
 }

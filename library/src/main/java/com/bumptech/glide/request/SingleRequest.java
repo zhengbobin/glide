@@ -1,18 +1,21 @@
 package com.bumptech.glide.request;
 
-import android.content.res.Resources;
+import android.content.Context;
+import android.content.res.Resources.Theme;
 import android.graphics.drawable.Drawable;
-import android.support.annotation.DrawableRes;
-import android.support.v4.content.res.ResourcesCompat;
-import android.support.v4.util.Pools;
-import android.support.v7.content.res.AppCompatResources;
 import android.util.Log;
+import androidx.annotation.DrawableRes;
+import androidx.annotation.GuardedBy;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.core.util.Pools;
 import com.bumptech.glide.GlideContext;
 import com.bumptech.glide.Priority;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.Engine;
 import com.bumptech.glide.load.engine.GlideException;
 import com.bumptech.glide.load.engine.Resource;
+import com.bumptech.glide.load.resource.drawable.DrawableDecoderCompat;
 import com.bumptech.glide.request.target.SizeReadyCallback;
 import com.bumptech.glide.request.target.Target;
 import com.bumptech.glide.request.transition.Transition;
@@ -22,6 +25,8 @@ import com.bumptech.glide.util.Synthetic;
 import com.bumptech.glide.util.Util;
 import com.bumptech.glide.util.pool.FactoryPools;
 import com.bumptech.glide.util.pool.StateVerifier;
+import java.util.List;
+import java.util.concurrent.Executor;
 
 /**
  * A {@link Request} that loads a {@link com.bumptech.glide.load.engine.Resource} into a given
@@ -29,102 +34,98 @@ import com.bumptech.glide.util.pool.StateVerifier;
  *
  * @param <R> The type of the resource that will be transcoded from the loaded resource.
  */
-public final class SingleRequest<R> implements Request,
-    SizeReadyCallback,
-    ResourceCallback,
-    FactoryPools.Poolable {
+public final class SingleRequest<R>
+    implements Request, SizeReadyCallback, ResourceCallback, FactoryPools.Poolable {
   /** Tag for logging internal events, not generally suitable for public use. */
   private static final String TAG = "Request";
   /** Tag for logging externally useful events (request completion, timing etc). */
   private static final String GLIDE_TAG = "Glide";
-  private static final Pools.Pool<SingleRequest<?>> POOL = FactoryPools.simple(150,
-      new FactoryPools.Factory<SingleRequest<?>>() {
-        @Override
-        public SingleRequest<?> create() {
-          return new SingleRequest<Object>();
-        }
-      });
+
+  private static final Pools.Pool<SingleRequest<?>> POOL =
+      FactoryPools.threadSafe(
+          150,
+          new FactoryPools.Factory<SingleRequest<?>>() {
+            @Override
+            public SingleRequest<?> create() {
+              return new SingleRequest<Object>();
+            }
+          });
+  private boolean isCallingCallbacks;
+
+  private static final boolean IS_VERBOSE_LOGGABLE = Log.isLoggable(TAG, Log.VERBOSE);
 
   private enum Status {
-    /**
-     * Created but not yet running.
-     */
+    /** Created but not yet running. */
     PENDING,
-    /**
-     * In the process of fetching media.
-     */
+    /** In the process of fetching media. */
     RUNNING,
-    /**
-     * Waiting for a callback given to the Target to be called to determine target dimensions.
-     */
+    /** Waiting for a callback given to the Target to be called to determine target dimensions. */
     WAITING_FOR_SIZE,
-    /**
-     * Finished loading media successfully.
-     */
+    /** Finished loading media successfully. */
     COMPLETE,
-    /**
-     * Failed to load media, may be restarted.
-     */
+    /** Failed to load media, may be restarted. */
     FAILED,
-    /**
-     * Cancelled by the user, may not be restarted.
-     */
-    CANCELLED,
-    /**
-     * Cleared by the user with a placeholder set, may not be restarted.
-     */
+    /** Cleared by the user with a placeholder set, may be restarted. */
     CLEARED,
-    /**
-     * Temporarily paused by the system, may be restarted.
-     */
-    PAUSED,
   }
 
-  private final String tag = String.valueOf(hashCode());
+  @Nullable
+  private final String tag = IS_VERBOSE_LOGGABLE ? String.valueOf(super.hashCode()) : null;
+
   private final StateVerifier stateVerifier = StateVerifier.newInstance();
 
+  @Nullable private RequestListener<R> targetListener;
   private RequestCoordinator requestCoordinator;
+  private Context context;
   private GlideContext glideContext;
-  private Object model;
+  @Nullable private Object model;
   private Class<R> transcodeClass;
-  private RequestOptions requestOptions;
+  private BaseRequestOptions<?> requestOptions;
   private int overrideWidth;
   private int overrideHeight;
   private Priority priority;
   private Target<R> target;
-  private RequestListener<R> requestListener;
+  @Nullable private List<RequestListener<R>> requestListeners;
   private Engine engine;
   private TransitionFactory<? super R> animationFactory;
+  private Executor callbackExecutor;
   private Resource<R> resource;
   private Engine.LoadStatus loadStatus;
   private long startTime;
+
+  @GuardedBy("this")
   private Status status;
+
   private Drawable errorDrawable;
   private Drawable placeholderDrawable;
   private Drawable fallbackDrawable;
   private int width;
   private int height;
-  private static boolean shouldCallAppCompatResources = true;
+  @Nullable private RuntimeException requestOrigin;
 
   public static <R> SingleRequest<R> obtain(
+      Context context,
       GlideContext glideContext,
       Object model,
       Class<R> transcodeClass,
-      RequestOptions requestOptions,
+      BaseRequestOptions<?> requestOptions,
       int overrideWidth,
       int overrideHeight,
       Priority priority,
       Target<R> target,
-      RequestListener<R> requestListener,
+      RequestListener<R> targetListener,
+      @Nullable List<RequestListener<R>> requestListeners,
       RequestCoordinator requestCoordinator,
       Engine engine,
-      TransitionFactory<? super R> animationFactory) {
-    @SuppressWarnings("unchecked") SingleRequest<R> request =
-        (SingleRequest<R>) POOL.acquire();
+      TransitionFactory<? super R> animationFactory,
+      Executor callbackExecutor) {
+    @SuppressWarnings("unchecked")
+    SingleRequest<R> request = (SingleRequest<R>) POOL.acquire();
     if (request == null) {
       request = new SingleRequest<>();
     }
     request.init(
+        context,
         glideContext,
         model,
         transcodeClass,
@@ -133,31 +134,38 @@ public final class SingleRequest<R> implements Request,
         overrideHeight,
         priority,
         target,
-        requestListener,
+        targetListener,
+        requestListeners,
         requestCoordinator,
         engine,
-        animationFactory);
+        animationFactory,
+        callbackExecutor);
     return request;
   }
 
+  @SuppressWarnings("WeakerAccess")
   @Synthetic
   SingleRequest() {
     // just create, instances are reused with recycle/init
   }
 
-  private void init(
+  private synchronized void init(
+      Context context,
       GlideContext glideContext,
       Object model,
       Class<R> transcodeClass,
-      RequestOptions requestOptions,
+      BaseRequestOptions<?> requestOptions,
       int overrideWidth,
       int overrideHeight,
       Priority priority,
       Target<R> target,
-      RequestListener<R> requestListener,
+      RequestListener<R> targetListener,
+      @Nullable List<RequestListener<R>> requestListeners,
       RequestCoordinator requestCoordinator,
       Engine engine,
-      TransitionFactory<? super R> animationFactory) {
+      TransitionFactory<? super R> animationFactory,
+      Executor callbackExecutor) {
+    this.context = context;
     this.glideContext = glideContext;
     this.model = model;
     this.transcodeClass = transcodeClass;
@@ -166,20 +174,29 @@ public final class SingleRequest<R> implements Request,
     this.overrideHeight = overrideHeight;
     this.priority = priority;
     this.target = target;
-    this.requestListener = requestListener;
+    this.targetListener = targetListener;
+    this.requestListeners = requestListeners;
     this.requestCoordinator = requestCoordinator;
     this.engine = engine;
     this.animationFactory = animationFactory;
+    this.callbackExecutor = callbackExecutor;
     status = Status.PENDING;
+
+    if (requestOrigin == null && glideContext.isLoggingRequestOriginsEnabled()) {
+      requestOrigin = new RuntimeException("Glide request origin trace");
+    }
   }
 
+  @NonNull
   @Override
   public StateVerifier getVerifier() {
     return stateVerifier;
   }
 
   @Override
-  public void recycle() {
+  public synchronized void recycle() {
+    assertNotCallingCallbacks();
+    context = null;
     glideContext = null;
     model = null;
     transcodeClass = null;
@@ -187,7 +204,8 @@ public final class SingleRequest<R> implements Request,
     overrideWidth = -1;
     overrideHeight = -1;
     target = null;
-    requestListener = null;
+    requestListeners = null;
+    targetListener = null;
     requestCoordinator = null;
     animationFactory = null;
     loadStatus = null;
@@ -196,11 +214,13 @@ public final class SingleRequest<R> implements Request,
     fallbackDrawable = null;
     width = -1;
     height = -1;
+    requestOrigin = null;
     POOL.release(this);
   }
 
   @Override
-  public void begin() {
+  public synchronized void begin() {
+    assertNotCallingCallbacks();
     stateVerifier.throwIfRecycled();
     startTime = LogTime.getLogTime();
     if (model == null) {
@@ -215,6 +235,24 @@ public final class SingleRequest<R> implements Request,
       return;
     }
 
+    if (status == Status.RUNNING) {
+      throw new IllegalArgumentException("Cannot restart a running request");
+    }
+
+    // If we're restarted after we're complete (usually via something like a notifyDataSetChanged
+    // that starts an identical request into the same Target or View), we can simply use the
+    // resource and size we retrieved the last time around and skip obtaining a new size, starting a
+    // new load etc. This does mean that users who want to restart a load because they expect that
+    // the view size has changed will need to explicitly clear the View or Target before starting
+    // the new load.
+    if (status == Status.COMPLETE) {
+      onResourceReady(resource, DataSource.MEMORY_CACHE);
+      return;
+    }
+
+    // Restarts for requests that are neither complete nor running can be treated as new requests
+    // and can run again from the beginning.
+
     status = Status.WAITING_FOR_SIZE;
     if (Util.isValidDimensions(overrideWidth, overrideHeight)) {
       onSizeReady(overrideWidth, overrideHeight);
@@ -226,7 +264,7 @@ public final class SingleRequest<R> implements Request,
         && canNotifyStatusChanged()) {
       target.onLoadStarted(getPlaceholderDrawable());
     }
-    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+    if (IS_VERBOSE_LOGGABLE) {
       logV("finished run method in " + LogTime.getElapsedMillis(startTime));
     }
   }
@@ -235,17 +273,28 @@ public final class SingleRequest<R> implements Request,
    * Cancels the current load but does not release any resources held by the request and continues
    * to display the loaded resource if the load completed before the call to cancel.
    *
-   * <p> Cancelled requests can be restarted with a subsequent call to {@link #begin()}. </p>
+   * <p>Cancelled requests can be restarted with a subsequent call to {@link #begin()}.
    *
    * @see #clear()
    */
-  void cancel() {
+  private void cancel() {
+    assertNotCallingCallbacks();
     stateVerifier.throwIfRecycled();
     target.removeCallback(this);
-    status = Status.CANCELLED;
     if (loadStatus != null) {
       loadStatus.cancel();
       loadStatus = null;
+    }
+  }
+
+  // Avoids difficult to understand errors like #2413.
+  private void assertNotCallingCallbacks() {
+    if (isCallingCallbacks) {
+      throw new IllegalStateException(
+          "You can't start or clear loads in RequestListener or"
+              + " Target callbacks. If you're trying to start a fallback request when a load fails,"
+              + " use RequestBuilder#error(RequestBuilder). Otherwise consider posting your into()"
+              + " or clear() calls to the main thread using a Handler instead.");
     }
   }
 
@@ -253,13 +302,14 @@ public final class SingleRequest<R> implements Request,
    * Cancels the current load if it is in progress, clears any resources held onto by the request
    * and replaces the loaded resource if the load completed with the placeholder.
    *
-   * <p> Cleared requests can be restarted with a subsequent call to {@link #begin()} </p>
+   * <p>Cleared requests can be restarted with a subsequent call to {@link #begin()}
    *
    * @see #cancel()
    */
   @Override
-  public void clear() {
-    Util.assertMainThread();
+  public synchronized void clear() {
+    assertNotCallingCallbacks();
+    stateVerifier.throwIfRecycled();
     if (status == Status.CLEARED) {
       return;
     }
@@ -268,22 +318,11 @@ public final class SingleRequest<R> implements Request,
     if (resource != null) {
       releaseResource(resource);
     }
-    if (canNotifyStatusChanged()) {
+    if (canNotifyCleared()) {
       target.onLoadCleared(getPlaceholderDrawable());
     }
-    // Must be after cancel().
+
     status = Status.CLEARED;
-  }
-
-  @Override
-  public boolean isPaused() {
-    return status == Status.PAUSED;
-  }
-
-  @Override
-  public void pause() {
-    clear();
-    status = Status.PAUSED;
   }
 
   private void releaseResource(Resource<?> resource) {
@@ -292,27 +331,27 @@ public final class SingleRequest<R> implements Request,
   }
 
   @Override
-  public boolean isRunning() {
+  public synchronized boolean isRunning() {
     return status == Status.RUNNING || status == Status.WAITING_FOR_SIZE;
   }
 
   @Override
-  public boolean isComplete() {
+  public synchronized boolean isComplete() {
     return status == Status.COMPLETE;
   }
 
   @Override
-  public boolean isResourceSet() {
+  public synchronized boolean isResourceSet() {
     return isComplete();
   }
 
   @Override
-  public boolean isCancelled() {
-    return status == Status.CANCELLED || status == Status.CLEARED;
+  public synchronized boolean isCleared() {
+    return status == Status.CLEARED;
   }
 
   @Override
-  public boolean isFailed() {
+  public synchronized boolean isFailed() {
     return status == Status.FAILED;
   }
 
@@ -327,7 +366,7 @@ public final class SingleRequest<R> implements Request,
   }
 
   private Drawable getPlaceholderDrawable() {
-     if (placeholderDrawable == null) {
+    if (placeholderDrawable == null) {
       placeholderDrawable = requestOptions.getPlaceholderDrawable();
       if (placeholderDrawable == null && requestOptions.getPlaceholderId() > 0) {
         placeholderDrawable = loadDrawable(requestOptions.getPlaceholderId());
@@ -347,32 +386,12 @@ public final class SingleRequest<R> implements Request,
   }
 
   private Drawable loadDrawable(@DrawableRes int resourceId) {
-    if (shouldCallAppCompatResources) {
-      return loadDrawableV7(resourceId);
-    } else {
-      return loadDrawableBase(resourceId);
-    }
+    Theme theme =
+        requestOptions.getTheme() != null ? requestOptions.getTheme() : context.getTheme();
+    return DrawableDecoderCompat.getDrawable(glideContext, resourceId, theme);
   }
 
-  /**
-   * Tries to load the drawable thanks to AppCompatResources.<br>
-   * This allows to parse VectorDrawables on legacy devices if the appcompat v7 is in the classpath.
-   */
-  private Drawable loadDrawableV7(@DrawableRes int resourceId) {
-    try {
-      return AppCompatResources.getDrawable(glideContext, resourceId);
-    } catch (NoClassDefFoundError error) {
-      shouldCallAppCompatResources = false;
-      return loadDrawableBase(resourceId);
-    }
-  }
-
-  private Drawable loadDrawableBase(@DrawableRes int resourceId) {
-    Resources resources = glideContext.getResources();
-    return ResourcesCompat.getDrawable(resources, resourceId, requestOptions.getTheme());
-  }
-
-  private void setErrorPlaceholder() {
+  private synchronized void setErrorPlaceholder() {
     if (!canNotifyStatusChanged()) {
       return;
     }
@@ -392,13 +411,11 @@ public final class SingleRequest<R> implements Request,
     target.onLoadFailed(error);
   }
 
-  /**
-   * A callback method that should never be invoked directly.
-   */
+  /** A callback method that should never be invoked directly. */
   @Override
-  public void onSizeReady(int width, int height) {
+  public synchronized void onSizeReady(int width, int height) {
     stateVerifier.throwIfRecycled();
-    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+    if (IS_VERBOSE_LOGGABLE) {
       logV("Got onSizeReady in " + LogTime.getElapsedMillis(startTime));
     }
     if (status != Status.WAITING_FOR_SIZE) {
@@ -410,27 +427,38 @@ public final class SingleRequest<R> implements Request,
     this.width = maybeApplySizeMultiplier(width, sizeMultiplier);
     this.height = maybeApplySizeMultiplier(height, sizeMultiplier);
 
-    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+    if (IS_VERBOSE_LOGGABLE) {
       logV("finished setup for calling load in " + LogTime.getElapsedMillis(startTime));
     }
-    loadStatus = engine.load(
-        glideContext,
-        model,
-        requestOptions.getSignature(),
-        this.width,
-        this.height,
-        requestOptions.getResourceClass(),
-        transcodeClass,
-        priority,
-        requestOptions.getDiskCacheStrategy(),
-        requestOptions.getTransformations(),
-        requestOptions.isTransformationRequired(),
-        requestOptions.getOptions(),
-        requestOptions.isMemoryCacheable(),
-        requestOptions.getUseUnlimitedSourceGeneratorsPool(),
-        requestOptions.getOnlyRetrieveFromCache(),
-        this);
-    if (Log.isLoggable(TAG, Log.VERBOSE)) {
+    loadStatus =
+        engine.load(
+            glideContext,
+            model,
+            requestOptions.getSignature(),
+            this.width,
+            this.height,
+            requestOptions.getResourceClass(),
+            transcodeClass,
+            priority,
+            requestOptions.getDiskCacheStrategy(),
+            requestOptions.getTransformations(),
+            requestOptions.isTransformationRequired(),
+            requestOptions.isScaleOnlyOrNoTransform(),
+            requestOptions.getOptions(),
+            requestOptions.isMemoryCacheable(),
+            requestOptions.getUseUnlimitedSourceGeneratorsPool(),
+            requestOptions.getUseAnimationPool(),
+            requestOptions.getOnlyRetrieveFromCache(),
+            this,
+            callbackExecutor);
+
+    // This is a hack that's only useful for testing right now where loads complete synchronously
+    // even though under any executor running on any thread but the main thread, the load would
+    // have completed asynchronously.
+    if (status != Status.RUNNING) {
+      loadStatus = null;
+    }
+    if (IS_VERBOSE_LOGGABLE) {
       logV("finished onSizeReady in " + LogTime.getElapsedMillis(startTime));
     }
   }
@@ -441,6 +469,10 @@ public final class SingleRequest<R> implements Request,
 
   private boolean canSetResource() {
     return requestCoordinator == null || requestCoordinator.canSetImage(this);
+  }
+
+  private boolean canNotifyCleared() {
+    return requestCoordinator == null || requestCoordinator.canNotifyCleared(this);
   }
 
   private boolean canNotifyStatusChanged() {
@@ -457,17 +489,25 @@ public final class SingleRequest<R> implements Request,
     }
   }
 
-  /**
-   * A callback method that should never be invoked directly.
-   */
+  private void notifyLoadFailed() {
+    if (requestCoordinator != null) {
+      requestCoordinator.onRequestFailed(this);
+    }
+  }
+
+  /** A callback method that should never be invoked directly. */
   @SuppressWarnings("unchecked")
   @Override
-  public void onResourceReady(Resource<?> resource, DataSource dataSource) {
+  public synchronized void onResourceReady(Resource<?> resource, DataSource dataSource) {
     stateVerifier.throwIfRecycled();
     loadStatus = null;
     if (resource == null) {
-      GlideException exception = new GlideException("Expected to receive a Resource<R> with an "
-          + "object of " + transcodeClass + " inside, but instead got null.");
+      GlideException exception =
+          new GlideException(
+              "Expected to receive a Resource<R> with an "
+                  + "object of "
+                  + transcodeClass
+                  + " inside, but instead got null.");
       onLoadFailed(exception);
       return;
     }
@@ -475,12 +515,25 @@ public final class SingleRequest<R> implements Request,
     Object received = resource.get();
     if (received == null || !transcodeClass.isAssignableFrom(received.getClass())) {
       releaseResource(resource);
-      GlideException exception = new GlideException("Expected to receive an object of "
-          + transcodeClass + " but instead" + " got "
-          + (received != null ? received.getClass() : "") + "{" + received + "} inside" + " "
-          + "Resource{" + resource + "}."
-          + (received != null ? "" : " " + "To indicate failure return a null Resource "
-          + "object, rather than a Resource object containing null data."));
+      GlideException exception =
+          new GlideException(
+              "Expected to receive an object of "
+                  + transcodeClass
+                  + " but instead"
+                  + " got "
+                  + (received != null ? received.getClass() : "")
+                  + "{"
+                  + received
+                  + "} inside"
+                  + " "
+                  + "Resource{"
+                  + resource
+                  + "}."
+                  + (received != null
+                      ? ""
+                      : " "
+                          + "To indicate failure return a null Resource "
+                          + "object, rather than a Resource object containing null data."));
       onLoadFailed(exception);
       return;
     }
@@ -499,41 +552,66 @@ public final class SingleRequest<R> implements Request,
    * Internal {@link #onResourceReady(Resource, DataSource)} where arguments are known to be safe.
    *
    * @param resource original {@link Resource}, never <code>null</code>
-   * @param result   object returned by {@link Resource#get()}, checked for type and never
-   *                 <code>null</code>
+   * @param result object returned by {@link Resource#get()}, checked for type and never <code>null
+   *     </code>
    */
-  private void onResourceReady(Resource<R> resource, R result, DataSource dataSource) {
+  private synchronized void onResourceReady(Resource<R> resource, R result, DataSource dataSource) {
     // We must call isFirstReadyResource before setting status.
     boolean isFirstResource = isFirstReadyResource();
     status = Status.COMPLETE;
     this.resource = resource;
 
     if (glideContext.getLogLevel() <= Log.DEBUG) {
-      Log.d(GLIDE_TAG, "Finished loading " + result.getClass().getSimpleName() + " from "
-          + dataSource + " for " + model + " with size [" + width + "x" + height + "] in "
-          + LogTime.getElapsedMillis(startTime) + " ms");
+      Log.d(
+          GLIDE_TAG,
+          "Finished loading "
+              + result.getClass().getSimpleName()
+              + " from "
+              + dataSource
+              + " for "
+              + model
+              + " with size ["
+              + width
+              + "x"
+              + height
+              + "] in "
+              + LogTime.getElapsedMillis(startTime)
+              + " ms");
     }
 
-    if (requestListener == null
-        || !requestListener.onResourceReady(result, model, target, dataSource, isFirstResource)) {
-      Transition<? super R> animation =
-          animationFactory.build(dataSource, isFirstResource);
-      target.onResourceReady(result, animation);
+    isCallingCallbacks = true;
+    try {
+      boolean anyListenerHandledUpdatingTarget = false;
+      if (requestListeners != null) {
+        for (RequestListener<R> listener : requestListeners) {
+          anyListenerHandledUpdatingTarget |=
+              listener.onResourceReady(result, model, target, dataSource, isFirstResource);
+        }
+      }
+      anyListenerHandledUpdatingTarget |=
+          targetListener != null
+              && targetListener.onResourceReady(result, model, target, dataSource, isFirstResource);
+
+      if (!anyListenerHandledUpdatingTarget) {
+        Transition<? super R> animation = animationFactory.build(dataSource, isFirstResource);
+        target.onResourceReady(result, animation);
+      }
+    } finally {
+      isCallingCallbacks = false;
     }
 
     notifyLoadSuccess();
   }
 
-  /**
-   * A callback method that should never be invoked directly.
-   */
+  /** A callback method that should never be invoked directly. */
   @Override
-  public void onLoadFailed(GlideException e) {
+  public synchronized void onLoadFailed(GlideException e) {
     onLoadFailed(e, Log.WARN);
   }
 
-  private void onLoadFailed(GlideException e, int maxLogLevel) {
+  private synchronized void onLoadFailed(GlideException e, int maxLogLevel) {
     stateVerifier.throwIfRecycled();
+    e.setOrigin(requestOrigin);
     int logLevel = glideContext.getLogLevel();
     if (logLevel <= maxLogLevel) {
       Log.w(GLIDE_TAG, "Load failed for " + model + " with size [" + width + "x" + height + "]", e);
@@ -544,10 +622,58 @@ public final class SingleRequest<R> implements Request,
 
     loadStatus = null;
     status = Status.FAILED;
-    //TODO: what if this is a thumbnail request?
-    if (requestListener == null
-        || !requestListener.onLoadFailed(e, model, target, isFirstReadyResource())) {
-      setErrorPlaceholder();
+
+    isCallingCallbacks = true;
+    try {
+      // TODO: what if this is a thumbnail request?
+      boolean anyListenerHandledUpdatingTarget = false;
+      if (requestListeners != null) {
+        for (RequestListener<R> listener : requestListeners) {
+          anyListenerHandledUpdatingTarget |=
+              listener.onLoadFailed(e, model, target, isFirstReadyResource());
+        }
+      }
+      anyListenerHandledUpdatingTarget |=
+          targetListener != null
+              && targetListener.onLoadFailed(e, model, target, isFirstReadyResource());
+
+      if (!anyListenerHandledUpdatingTarget) {
+        setErrorPlaceholder();
+      }
+    } finally {
+      isCallingCallbacks = false;
+    }
+
+    notifyLoadFailed();
+  }
+
+  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
+  @Override
+  public synchronized boolean isEquivalentTo(Request o) {
+    if (o instanceof SingleRequest) {
+      SingleRequest<?> that = (SingleRequest<?>) o;
+      synchronized (that) {
+        return overrideWidth == that.overrideWidth
+            && overrideHeight == that.overrideHeight
+            && Util.bothModelsNullEquivalentOrEquals(model, that.model)
+            && transcodeClass.equals(that.transcodeClass)
+            && requestOptions.equals(that.requestOptions)
+            && priority == that.priority
+            // We do not want to require that RequestListeners implement equals/hashcode, so we
+            // don't compare them using equals(). We can however, at least assert that the same
+            // amount of request listeners are present in both requests.
+            && listenerCountEquals(that);
+      }
+    }
+    return false;
+  }
+
+  @SuppressWarnings("SynchronizationOnLocalVariableOrMethodParameter")
+  private synchronized boolean listenerCountEquals(SingleRequest<?> other) {
+    synchronized (other) {
+      int firstListenerCount = requestListeners == null ? 0 : requestListeners.size();
+      int secondListenerCount = other.requestListeners == null ? 0 : other.requestListeners.size();
+      return firstListenerCount == secondListenerCount;
     }
   }
 

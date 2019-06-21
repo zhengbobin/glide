@@ -6,7 +6,7 @@ import static org.junit.Assert.assertTrue;
 import static org.robolectric.Shadows.shadowOf;
 
 import android.graphics.Bitmap;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 import com.bumptech.glide.testutil.TestUtil;
 import java.io.IOException;
 import java.util.Arrays;
@@ -20,11 +20,9 @@ import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
 import org.robolectric.shadows.ShadowBitmap;
 
-/**
- * Tests for {@link com.bumptech.glide.gifdecoder.GifDecoder}.
- */
+/** Tests for {@link com.bumptech.glide.gifdecoder.GifDecoder}. */
 @RunWith(RobolectricTestRunner.class)
-@Config(manifest = Config.NONE, sdk = 18)
+@Config(sdk = 18)
 public class GifDecoderTest {
 
   private MockProvider provider;
@@ -32,6 +30,21 @@ public class GifDecoderTest {
   @Before
   public void setUp() {
     provider = new MockProvider();
+  }
+
+  @Test
+  public void testCorrectPixelsDecoded() throws IOException {
+    byte[] data = TestUtil.resourceToBytes(getClass(), "white_black_row.gif");
+    GifHeaderParser headerParser = new GifHeaderParser();
+    headerParser.setData(data);
+    GifHeader header = headerParser.parseHeader();
+    GifDecoder decoder = new StandardGifDecoder(provider);
+    decoder.setData(header, data);
+    decoder.advance();
+    Bitmap bitmap = decoder.getNextFrame();
+    assertNotNull(bitmap);
+    assertEquals(bitmap.getPixel(2, 0), bitmap.getPixel(0, 0));
+    assertEquals(bitmap.getPixel(3, 0), bitmap.getPixel(1, 0));
   }
 
   @Test
@@ -197,27 +210,29 @@ public class GifDecoderTest {
     }
 
     @Override
-    public void release(Bitmap bitmap) {
+    public void release(@NonNull Bitmap bitmap) {
       // Do nothing.
     }
 
+    @NonNull
     @Override
     public byte[] obtainByteArray(int size) {
       return new byte[size];
     }
 
     @Override
-    public void release(byte[] bytes) {
+    public void release(@NonNull byte[] bytes) {
       // Do nothing.
     }
 
+    @NonNull
     @Override
     public int[] obtainIntArray(int size) {
       return new int[size];
     }
 
     @Override
-    public void release(int[] array) {
+    public void release(@NonNull int[] array) {
       // Do Nothing
     }
 

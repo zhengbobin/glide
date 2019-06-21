@@ -1,13 +1,13 @@
 apply plugin: 'com.android.library'
 
 dependencies {
-    compile project(':library')
-    provided "com.android.support:recyclerview-v7:${SUPPORT_V7_VERSION}"
+    implementation project(':library')
+    compileOnly "androidx.recyclerview:recyclerview:${ANDROID_X_VERSION}"
+    compileOnly "androidx.fragment:fragment:${ANDROID_X_VERSION}"
 }
 
 android {
     compileSdkVersion COMPILE_SDK_VERSION as int
-    buildToolsVersion BUILD_TOOLS_VERSION as String
 
     defaultConfig {
         minSdkVersion MIN_SDK_VERSION as int

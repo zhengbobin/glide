@@ -2,8 +2,9 @@ package com.bumptech.glide.request.target;
 
 import android.graphics.drawable.Animatable;
 import android.graphics.drawable.Drawable;
-import android.support.annotation.Nullable;
 import android.widget.ImageView;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.bumptech.glide.request.transition.Transition;
 
 /**
@@ -11,16 +12,24 @@ import com.bumptech.glide.request.transition.Transition;
  * android.widget.ImageView}s.
  *
  * @param <Z> The type of resource that this target will display in the wrapped {@link
- *            android.widget.ImageView}.
+ *     android.widget.ImageView}.
  */
+// Public API.
+@SuppressWarnings("WeakerAccess")
 public abstract class ImageViewTarget<Z> extends ViewTarget<ImageView, Z>
     implements Transition.ViewAdapter {
 
-  @Nullable
-  private Animatable animatable;
+  @Nullable private Animatable animatable;
 
   public ImageViewTarget(ImageView view) {
     super(view);
+  }
+
+  /** @deprecated Use {@link #waitForLayout()} instead. */
+  @SuppressWarnings({"deprecation"})
+  @Deprecated
+  public ImageViewTarget(ImageView view, boolean waitForLayout) {
+    super(view, waitForLayout);
   }
 
   /**
@@ -79,12 +88,15 @@ public abstract class ImageViewTarget<Z> extends ViewTarget<ImageView, Z>
   @Override
   public void onLoadCleared(@Nullable Drawable placeholder) {
     super.onLoadCleared(placeholder);
+    if (animatable != null) {
+      animatable.stop();
+    }
     setResourceInternal(null);
     setDrawable(placeholder);
   }
 
   @Override
-  public void onResourceReady(Z resource, @Nullable Transition<? super Z> transition) {
+  public void onResourceReady(@NonNull Z resource, @Nullable Transition<? super Z> transition) {
     if (transition == null || !transition.transition(resource, this)) {
       setResourceInternal(resource);
     } else {
@@ -107,8 +119,10 @@ public abstract class ImageViewTarget<Z> extends ViewTarget<ImageView, Z>
   }
 
   private void setResourceInternal(@Nullable Z resource) {
-    maybeUpdateAnimatable(resource);
+    // Order matters here. Set the resource first to make sure that the Drawable has a valid and
+    // non-null Callback before starting it.
     setResource(resource);
+    maybeUpdateAnimatable(resource);
   }
 
   private void maybeUpdateAnimatable(@Nullable Z resource) {
@@ -122,4 +136,3 @@ public abstract class ImageViewTarget<Z> extends ViewTarget<ImageView, Z>
 
   protected abstract void setResource(@Nullable Z resource);
 }
-

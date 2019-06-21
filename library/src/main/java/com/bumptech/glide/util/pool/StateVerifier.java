@@ -1,16 +1,14 @@
 package com.bumptech.glide.util.pool;
 
+import androidx.annotation.NonNull;
 import com.bumptech.glide.util.Synthetic;
 
-/**
- * Verifies that the job is not in the recycled state.
- */
+/** Verifies that the job is not in the recycled state. */
 public abstract class StateVerifier {
   private static final boolean DEBUG = false;
 
-  /**
-   * Creates a new {@link StateVerifier} instance.
-   */
+  /** Creates a new {@link StateVerifier} instance. */
+  @NonNull
   public static StateVerifier newInstance() {
     if (DEBUG) {
       return new DebugStateVerifier();
@@ -19,7 +17,7 @@ public abstract class StateVerifier {
     }
   }
 
-  private StateVerifier() { }
+  private StateVerifier() {}
 
   /**
    * Throws an exception if we believe our object is recycled and inactive (i.e. is currently in an
@@ -27,16 +25,14 @@ public abstract class StateVerifier {
    */
   public abstract void throwIfRecycled();
 
-  /**
-   * Sets whether or not our object is recycled.
-   */
+  /** Sets whether or not our object is recycled. */
   abstract void setRecycled(boolean isRecycled);
 
   private static class DefaultStateVerifier extends StateVerifier {
     private volatile boolean isReleased;
 
     @Synthetic
-    DefaultStateVerifier() { }
+    DefaultStateVerifier() {}
 
     @Override
     public void throwIfRecycled() {
@@ -56,7 +52,7 @@ public abstract class StateVerifier {
     private volatile RuntimeException recycledAtStackTraceException;
 
     @Synthetic
-    DebugStateVerifier() { }
+    DebugStateVerifier() {}
 
     @Override
     public void throwIfRecycled() {
@@ -68,9 +64,9 @@ public abstract class StateVerifier {
     @Override
     void setRecycled(boolean isRecycled) {
       if (isRecycled) {
-        this.recycledAtStackTraceException = new RuntimeException("Released");
+        recycledAtStackTraceException = new RuntimeException("Released");
       } else {
-        this.recycledAtStackTraceException = null;
+        recycledAtStackTraceException = null;
       }
     }
   }

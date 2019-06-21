@@ -1,13 +1,11 @@
 package com.bumptech.glide.samples.flickr;
 
 import android.content.Context;
-import android.support.v7.widget.AppCompatImageView;
 import android.util.AttributeSet;
 import android.widget.ImageView;
+import androidx.appcompat.widget.AppCompatImageView;
 
-/**
- * An always square {@link ImageView}.
- */
+/** An always square {@link ImageView}. */
 public final class SquareImageView extends AppCompatImageView {
 
   public SquareImageView(Context context) {
@@ -22,9 +20,10 @@ public final class SquareImageView extends AppCompatImageView {
     super(context, attrs, defStyleAttr);
   }
 
+  // We want a square view.
+  @SuppressWarnings("SuspiciousNameCombination")
   @Override
   protected void onMeasure(int widthMeasureSpec, int heightMeasureSpec) {
     super.onMeasure(widthMeasureSpec, widthMeasureSpec);
   }
 }
-

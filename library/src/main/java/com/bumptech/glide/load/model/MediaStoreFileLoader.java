@@ -5,6 +5,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.provider.MediaStore;
 import android.text.TextUtils;
+import androidx.annotation.NonNull;
 import com.bumptech.glide.Priority;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.Options;
@@ -14,31 +15,33 @@ import com.bumptech.glide.signature.ObjectKey;
 import java.io.File;
 import java.io.FileNotFoundException;
 
-/**
- * Loads the file path for {@link MediaStore} owned {@link Uri uris}.
- */
-public final class MediaStoreFileLoader implements ModelLoader<Uri, File>  {
+/** Loads the file path for {@link MediaStore} owned {@link Uri uris}. */
+public final class MediaStoreFileLoader implements ModelLoader<Uri, File> {
 
   private final Context context;
 
-  MediaStoreFileLoader(Context context) {
+  // Public API.
+  @SuppressWarnings("WeakerAccess")
+  public MediaStoreFileLoader(Context context) {
     this.context = context;
   }
 
   @Override
-  public LoadData<File> buildLoadData(Uri uri, int width, int height, Options options) {
+  public LoadData<File> buildLoadData(
+      @NonNull Uri uri, int width, int height, @NonNull Options options) {
     return new LoadData<>(new ObjectKey(uri), new FilePathFetcher(context, uri));
   }
 
   @Override
-  public boolean handles(Uri uri) {
+  public boolean handles(@NonNull Uri uri) {
     return MediaStoreUtil.isMediaStoreUri(uri);
   }
 
   private static class FilePathFetcher implements DataFetcher<File> {
-    private static final String[] PROJECTION = new String[] {
-        MediaStore.MediaColumns.DATA,
-    };
+    private static final String[] PROJECTION =
+        new String[] {
+          MediaStore.MediaColumns.DATA,
+        };
 
     private final Context context;
     private final Uri uri;
@@ -49,9 +52,12 @@ public final class MediaStoreFileLoader implements ModelLoader<Uri, File>  {
     }
 
     @Override
-    public void loadData(Priority priority, DataCallback<? super File> callback) {
-      Cursor cursor = context.getContentResolver().query(uri, PROJECTION, null /*selection*/,
-          null /*selectionArgs*/, null /*sortOrder*/);
+    public void loadData(@NonNull Priority priority, @NonNull DataCallback<? super File> callback) {
+      Cursor cursor =
+          context
+              .getContentResolver()
+              .query(
+                  uri, PROJECTION, null /*selection*/, null /*selectionArgs*/, null /*sortOrder*/);
 
       String filePath = null;
       if (cursor != null) {
@@ -81,20 +87,20 @@ public final class MediaStoreFileLoader implements ModelLoader<Uri, File>  {
       // Do nothing.
     }
 
+    @NonNull
     @Override
     public Class<File> getDataClass() {
       return File.class;
     }
 
+    @NonNull
     @Override
     public DataSource getDataSource() {
       return DataSource.LOCAL;
     }
   }
 
-  /**
-   * {@link ModelLoaderFactory} for {@link MediaStoreFileLoader}s.
-   */
+  /** {@link ModelLoaderFactory} for {@link MediaStoreFileLoader}s. */
   public static final class Factory implements ModelLoaderFactory<Uri, File> {
 
     private final Context context;
@@ -103,6 +109,7 @@ public final class MediaStoreFileLoader implements ModelLoader<Uri, File>  {
       this.context = context;
     }
 
+    @NonNull
     @Override
     public ModelLoader<Uri, File> build(MultiModelLoaderFactory multiFactory) {
       return new MediaStoreFileLoader(context);

@@ -4,10 +4,14 @@ import static com.bumptech.glide.request.RequestOptions.diskCacheStrategyOf;
 import static com.bumptech.glide.request.RequestOptions.signatureOf;
 
 import android.graphics.Bitmap;
+import android.graphics.drawable.Drawable;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
 import android.os.SystemClock;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
+import androidx.annotation.VisibleForTesting;
 import com.bumptech.glide.Glide;
 import com.bumptech.glide.RequestBuilder;
 import com.bumptech.glide.RequestManager;
@@ -17,39 +21,47 @@ import com.bumptech.glide.load.Transformation;
 import com.bumptech.glide.load.engine.DiskCacheStrategy;
 import com.bumptech.glide.load.engine.bitmap_recycle.BitmapPool;
 import com.bumptech.glide.request.RequestOptions;
-import com.bumptech.glide.request.target.SimpleTarget;
+import com.bumptech.glide.request.target.CustomTarget;
 import com.bumptech.glide.request.transition.Transition;
+import com.bumptech.glide.signature.ObjectKey;
 import com.bumptech.glide.util.Preconditions;
 import com.bumptech.glide.util.Synthetic;
 import com.bumptech.glide.util.Util;
 import java.nio.ByteBuffer;
-import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 
 class GifFrameLoader {
   private final GifDecoder gifDecoder;
   private final Handler handler;
   private final List<FrameCallback> callbacks = new ArrayList<>();
-  @Synthetic final RequestManager requestManager;
+
+  @SuppressWarnings("WeakerAccess")
+  @Synthetic
+  final RequestManager requestManager;
+
   private final BitmapPool bitmapPool;
 
-  private boolean isRunning = false;
-  private boolean isLoadPending = false;
-  private boolean startFromFirstFrame = false;
+  private boolean isRunning;
+  private boolean isLoadPending;
+  private boolean startFromFirstFrame;
   private RequestBuilder<Bitmap> requestBuilder;
   private DelayTarget current;
   private boolean isCleared;
   private DelayTarget next;
   private Bitmap firstFrame;
   private Transformation<Bitmap> transformation;
+  private DelayTarget pendingTarget;
+  @Nullable private GifFrameLoader.OnEveryFrameListener onEveryFrameListener;
+  private int firstFrameSize;
+  private int width;
+  private int height;
 
   public interface FrameCallback {
     void onFrameReady();
   }
 
-  public GifFrameLoader(
+  GifFrameLoader(
       Glide glide,
       GifDecoder gifDecoder,
       int width,
@@ -92,6 +104,10 @@ class GifFrameLoader {
     this.transformation = Preconditions.checkNotNull(transformation);
     this.firstFrame = Preconditions.checkNotNull(firstFrame);
     requestBuilder = requestBuilder.apply(new RequestOptions().transform(transformation));
+
+    firstFrameSize = Util.getBitmapByteSize(firstFrame);
+    width = firstFrame.getWidth();
+    height = firstFrame.getHeight();
   }
 
   Transformation<Bitmap> getFrameTransformation() {
@@ -106,10 +122,10 @@ class GifFrameLoader {
     if (isCleared) {
       throw new IllegalStateException("Cannot subscribe to a cleared frame loader");
     }
-    boolean start = callbacks.isEmpty();
     if (callbacks.contains(frameCallback)) {
       throw new IllegalStateException("Cannot subscribe twice in a row");
     }
+    boolean start = callbacks.isEmpty();
     callbacks.add(frameCallback);
     if (start) {
       start();
@@ -124,24 +140,19 @@ class GifFrameLoader {
   }
 
   int getWidth() {
-    return getCurrentFrame().getWidth();
+    return width;
   }
 
   int getHeight() {
-    return getCurrentFrame().getHeight();
+    return height;
   }
 
   int getSize() {
-    return gifDecoder.getByteSize() + getFrameSize();
+    return gifDecoder.getByteSize() + firstFrameSize;
   }
 
   int getCurrentIndex() {
     return current != null ? current.index : -1;
-  }
-
-  private int getFrameSize() {
-    return Util.getBitmapByteSize(getCurrentFrame().getWidth(), getCurrentFrame().getHeight(),
-        getCurrentFrame().getConfig());
   }
 
   ByteBuffer getBuffer() {
@@ -182,6 +193,10 @@ class GifFrameLoader {
       requestManager.clear(next);
       next = null;
     }
+    if (pendingTarget != null) {
+      requestManager.clear(pendingTarget);
+      pendingTarget = null;
+    }
     gifDecoder.clear();
     isCleared = true;
   }
@@ -195,8 +210,16 @@ class GifFrameLoader {
       return;
     }
     if (startFromFirstFrame) {
+      Preconditions.checkArgument(
+          pendingTarget == null, "Pending target must be null when starting from the first frame");
       gifDecoder.resetFrameIndex();
       startFromFirstFrame = false;
+    }
+    if (pendingTarget != null) {
+      DelayTarget temp = pendingTarget;
+      pendingTarget = null;
+      onFrameReady(temp);
+      return;
     }
     isLoadPending = true;
     // Get the delay before incrementing the pointer because the delay indicates the amount of time
@@ -206,7 +229,7 @@ class GifFrameLoader {
 
     gifDecoder.advance();
     next = new DelayTarget(handler, gifDecoder.getCurrentFrameIndex(), targetTime);
-    requestBuilder.clone().apply(signatureOf(new FrameSignature())).load(gifDecoder).into(next);
+    requestBuilder.apply(signatureOf(getFrameSignature())).load(gifDecoder).into(next);
   }
 
   private void recycleFirstFrame() {
@@ -219,12 +242,33 @@ class GifFrameLoader {
   void setNextStartFromFirstFrame() {
     Preconditions.checkArgument(!isRunning, "Can't restart a running animation");
     startFromFirstFrame = true;
+    if (pendingTarget != null) {
+      requestManager.clear(pendingTarget);
+      pendingTarget = null;
+    }
   }
 
-  // Visible for testing.
+  @VisibleForTesting
+  void setOnEveryFrameReadyListener(@Nullable OnEveryFrameListener onEveryFrameListener) {
+    this.onEveryFrameListener = onEveryFrameListener;
+  }
+
+  @VisibleForTesting
   void onFrameReady(DelayTarget delayTarget) {
+    if (onEveryFrameListener != null) {
+      onEveryFrameListener.onFrameReady();
+    }
+    isLoadPending = false;
     if (isCleared) {
       handler.obtainMessage(FrameLoaderCallback.MSG_CLEAR, delayTarget).sendToTarget();
+      return;
+    }
+    // If we're not running, notifying here will recycle the frame that we might currently be
+    // showing, which breaks things (see #2526). We also can't discard this frame because we've
+    // already incremented the frame pointer and can't decode the same frame again. Instead we'll
+    // just hang on to this next frame until start() or clear() are called.
+    if (!isRunning) {
+      pendingTarget = delayTarget;
       return;
     }
 
@@ -243,16 +287,15 @@ class GifFrameLoader {
       }
     }
 
-    isLoadPending = false;
     loadNextFrame();
   }
 
   private class FrameLoaderCallback implements Handler.Callback {
-    public static final int MSG_DELAY = 1;
-    public static final int MSG_CLEAR = 2;
+    static final int MSG_DELAY = 1;
+    static final int MSG_CLEAR = 2;
 
     @Synthetic
-    FrameLoaderCallback() { }
+    FrameLoaderCallback() {}
 
     @Override
     public boolean handleMessage(Message msg) {
@@ -268,8 +311,8 @@ class GifFrameLoader {
     }
   }
 
-  // Visible for testing.
-  static class DelayTarget extends SimpleTarget<Bitmap> {
+  @VisibleForTesting
+  static class DelayTarget extends CustomTarget<Bitmap> {
     private final Handler handler;
     @Synthetic final int index;
     private final long targetTime;
@@ -286,10 +329,16 @@ class GifFrameLoader {
     }
 
     @Override
-    public void onResourceReady(Bitmap resource, Transition<? super Bitmap> transition) {
+    public void onResourceReady(
+        @NonNull Bitmap resource, @Nullable Transition<? super Bitmap> transition) {
       this.resource = resource;
       Message msg = handler.obtainMessage(FrameLoaderCallback.MSG_DELAY, this);
       handler.sendMessageAtTime(msg, targetTime);
+    }
+
+    @Override
+    public void onLoadCleared(@Nullable Drawable placeholder) {
+      this.resource = null;
     }
   }
 
@@ -299,40 +348,19 @@ class GifFrameLoader {
         .asBitmap()
         .apply(
             diskCacheStrategyOf(DiskCacheStrategy.NONE)
+                .useAnimationPool(true)
                 .skipMemoryCache(true)
                 .override(width, height));
   }
 
-  // Visible for testing.
-  static class FrameSignature implements Key {
-    private final UUID uuid;
+  private static Key getFrameSignature() {
+    // Some devices seem to have crypto bugs that throw exceptions when you create a new UUID.
+    // See #1510.
+    return new ObjectKey(Math.random());
+  }
 
-    public FrameSignature() {
-      this(UUID.randomUUID());
-    }
-
-    // VisibleForTesting.
-    FrameSignature(UUID uuid) {
-      this.uuid = uuid;
-    }
-
-    @Override
-    public boolean equals(Object o) {
-      if (o instanceof FrameSignature) {
-        FrameSignature other = (FrameSignature) o;
-        return other.uuid.equals(uuid);
-      }
-      return false;
-    }
-
-    @Override
-    public int hashCode() {
-      return uuid.hashCode();
-    }
-
-    @Override
-    public void updateDiskCacheKey(MessageDigest messageDigest) {
-      throw new UnsupportedOperationException("Not implemented");
-    }
+  @VisibleForTesting
+  interface OnEveryFrameListener {
+    void onFrameReady();
   }
 }

@@ -1,5 +1,6 @@
 package com.bumptech.glide.load.engine;
 
+import androidx.annotation.NonNull;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.Key;
 import com.bumptech.glide.load.data.DataFetcher;
@@ -12,10 +13,9 @@ import java.util.List;
  * Generates {@link com.bumptech.glide.load.data.DataFetcher DataFetchers} from cache files
  * containing original unmodified source data.
  */
-class DataCacheGenerator implements DataFetcherGenerator,
-    DataFetcher.DataCallback<Object> {
+class DataCacheGenerator implements DataFetcherGenerator, DataFetcher.DataCallback<Object> {
 
-  private List<Key> cacheKeys;
+  private final List<Key> cacheKeys;
   private final DecodeHelper<?> helper;
   private final FetcherReadyCallback cb;
 
@@ -50,6 +50,9 @@ class DataCacheGenerator implements DataFetcherGenerator,
       }
 
       Key sourceId = cacheKeys.get(sourceIdIndex);
+      // PMD.AvoidInstantiatingObjectsInLoops The loop iterates a limited number of times
+      // and the actions it performs are much more expensive than a single allocation.
+      @SuppressWarnings("PMD.AvoidInstantiatingObjectsInLoops")
       Key originalKey = new DataCacheKey(sourceId, helper.getSignature());
       cacheFile = helper.getDiskCache().get(originalKey);
       if (cacheFile != null) {
@@ -64,8 +67,8 @@ class DataCacheGenerator implements DataFetcherGenerator,
     while (!started && hasNextModelLoader()) {
       ModelLoader<File, ?> modelLoader = modelLoaders.get(modelLoaderIndex++);
       loadData =
-          modelLoader.buildLoadData(cacheFile, helper.getWidth(), helper.getHeight(),
-              helper.getOptions());
+          modelLoader.buildLoadData(
+              cacheFile, helper.getWidth(), helper.getHeight(), helper.getOptions());
       if (loadData != null && helper.hasLoadPath(loadData.fetcher.getDataClass())) {
         started = true;
         loadData.fetcher.loadData(helper.getPriority(), this);
@@ -92,7 +95,7 @@ class DataCacheGenerator implements DataFetcherGenerator,
   }
 
   @Override
-  public void onLoadFailed(Exception e) {
+  public void onLoadFailed(@NonNull Exception e) {
     cb.onDataFetcherFailed(sourceKey, e, loadData.fetcher, DataSource.DATA_DISK_CACHE);
   }
 }

@@ -1,7 +1,5 @@
 package com.bumptech.glide.samples.giphy;
 
-import static com.bumptech.glide.request.RequestOptions.decodeTypeOf;
-
 import android.app.Activity;
 import android.content.ClipData;
 import android.content.ClipboardManager;
@@ -12,7 +10,6 @@ import android.graphics.drawable.Drawable;
 import android.os.Bundle;
 import android.view.View;
 import android.widget.ImageView;
-import com.bumptech.glide.Glide;
 import com.bumptech.glide.RequestBuilder;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.GlideException;
@@ -21,9 +18,7 @@ import com.bumptech.glide.request.RequestListener;
 import com.bumptech.glide.request.target.Target;
 import com.google.gson.Gson;
 
-/**
- * An {@link android.app.Activity} for displaying full size original GIFs.
- */
+/** An {@link android.app.Activity} for displaying full size original GIFs. */
 public class FullscreenActivity extends Activity {
   private static final String EXTRA_RESULT_JSON = "result_json";
   private GifDrawable gifDrawable;
@@ -44,48 +39,57 @@ public class FullscreenActivity extends Activity {
 
     ImageView gifView = (ImageView) findViewById(R.id.fullscreen_gif);
 
-    gifView.setOnClickListener(new View.OnClickListener() {
-      @Override
-      public void onClick(View view) {
-        ClipboardManager clipboard = (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
-        ClipData clip = ClipData.newPlainText("giphy_url", result.images.original.url);
-        clipboard.setPrimaryClip(clip);
+    gifView.setOnClickListener(
+        new View.OnClickListener() {
+          @Override
+          public void onClick(View view) {
+            ClipboardManager clipboard =
+                (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
+            ClipData clip = ClipData.newPlainText("giphy_url", result.images.original.url);
+            clipboard.setPrimaryClip(clip);
 
-        if (gifDrawable != null) {
-          if (gifDrawable.isRunning()) {
-            gifDrawable.stop();
-          } else {
-            gifDrawable.start();
+            if (gifDrawable != null) {
+              if (gifDrawable.isRunning()) {
+                gifDrawable.stop();
+              } else {
+                gifDrawable.start();
+              }
+            }
           }
-        }
-      }
-    });
+        });
 
-    RequestBuilder<Drawable> thumbnailRequest = Glide.with(this)
-        .load(result)
-        .apply(decodeTypeOf(Bitmap.class));
+    RequestBuilder<Drawable> thumbnailRequest =
+        GlideApp.with(this).load(result).decode(Bitmap.class);
 
-    Glide.with(this)
+    GlideApp.with(this)
         .load(result.images.original.url)
         .thumbnail(thumbnailRequest)
-        .listener(new RequestListener<Drawable>() {
-          @Override
-          public boolean onLoadFailed(GlideException e, Object model, Target<Drawable> target,
-              boolean isFirstResource) {
-            return false;
-          }
+        .listener(
+            new RequestListener<Drawable>() {
+              @Override
+              public boolean onLoadFailed(
+                  GlideException e,
+                  Object model,
+                  Target<Drawable> target,
+                  boolean isFirstResource) {
+                return false;
+              }
 
-          @Override
-          public boolean onResourceReady(Drawable resource, Object model, Target<Drawable> target,
-              DataSource dataSource, boolean isFirstResource) {
-            if (resource instanceof GifDrawable) {
-              gifDrawable = (GifDrawable) resource;
-            } else {
-              gifDrawable = null;
-            }
-            return false;
-          }
-        })
+              @Override
+              public boolean onResourceReady(
+                  Drawable resource,
+                  Object model,
+                  Target<Drawable> target,
+                  DataSource dataSource,
+                  boolean isFirstResource) {
+                if (resource instanceof GifDrawable) {
+                  gifDrawable = (GifDrawable) resource;
+                } else {
+                  gifDrawable = null;
+                }
+                return false;
+              }
+            })
         .into(gifView);
   }
 }

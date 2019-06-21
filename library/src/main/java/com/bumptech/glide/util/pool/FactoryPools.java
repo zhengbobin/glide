@@ -1,9 +1,10 @@
 package com.bumptech.glide.util.pool;
 
-import android.support.v4.util.Pools.Pool;
-import android.support.v4.util.Pools.SimplePool;
-import android.support.v4.util.Pools.SynchronizedPool;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.core.util.Pools.Pool;
+import androidx.core.util.Pools.SimplePool;
+import androidx.core.util.Pools.SynchronizedPool;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -15,40 +16,43 @@ import java.util.List;
 public final class FactoryPools {
   private static final String TAG = "FactoryPools";
   private static final int DEFAULT_POOL_SIZE = 20;
-  private static final Resetter<Object> EMPTY_RESETTER = new Resetter<Object>() {
-    @Override
-    public void reset(Object object) {
-      // Do nothing.
-    }
-  };
+  private static final Resetter<Object> EMPTY_RESETTER =
+      new Resetter<Object>() {
+        @Override
+        public void reset(@NonNull Object object) {
+          // Do nothing.
+        }
+      };
 
-  private FactoryPools() { }
+  private FactoryPools() {}
 
   /**
-   * Returns a non-thread safe {@link Pool} that never returns {@code null} from
-   * {@link Pool#acquire()} and that contains objects of the type created by the given
-   * {@link Factory} with the given maximum size.
+   * Returns a non-thread safe {@link Pool} that never returns {@code null} from {@link
+   * Pool#acquire()} and that contains objects of the type created by the given {@link Factory} with
+   * the given maximum size.
    *
    * <p>If the pool is empty when {@link Pool#acquire()} is called, the given {@link Factory} will
    * be used to create a new instance.
    *
    * @param <T> The type of object the pool will contains.
    */
-  public static <T extends Poolable> Pool<T> simple(int size, Factory<T> factory) {
+  @NonNull
+  public static <T extends Poolable> Pool<T> simple(int size, @NonNull Factory<T> factory) {
     return build(new SimplePool<T>(size), factory);
   }
 
   /**
-   * Returns a new thread safe {@link Pool} that never returns {@code null} from
-   * {@link Pool#acquire()} and that contains objects of the type created by the given
-   * {@link Factory} with the given maximum size.
+   * Returns a new thread safe {@link Pool} that never returns {@code null} from {@link
+   * Pool#acquire()} and that contains objects of the type created by the given {@link Factory} with
+   * the given maximum size.
    *
    * <p>If the pool is empty when {@link Pool#acquire()} is called, the given {@link Factory} will
    * be used to create a new instance.
    *
    * @param <T> The type of object the pool will contains.
    */
-  public static <T extends Poolable> Pool<T> threadSafe(int size, Factory<T> factory) {
+  @NonNull
+  public static <T extends Poolable> Pool<T> threadSafe(int size, @NonNull Factory<T> factory) {
     return build(new SynchronizedPool<T>(size), factory);
   }
 
@@ -61,42 +65,54 @@ public final class FactoryPools {
    *
    * @param <T> The type of object that the {@link List Lists} will contain.
    */
+  @NonNull
   public static <T> Pool<List<T>> threadSafeList() {
     return threadSafeList(DEFAULT_POOL_SIZE);
   }
 
   /**
-   * Returns a new thread safe {@link Pool} that never returns {@code null} and that contains
-   * {@link List Lists} of a specific generic type with the given maximum size.
+   * Returns a new thread safe {@link Pool} that never returns {@code null} and that contains {@link
+   * List Lists} of a specific generic type with the given maximum size.
    *
    * <p>If the pool is empty when {@link Pool#acquire()} is called, a new {@link List} will be
    * created.
    *
    * @param <T> The type of object that the {@link List Lists} will contain.
    */
+  // Public API.
+  @SuppressWarnings("WeakerAccess")
+  @NonNull
   public static <T> Pool<List<T>> threadSafeList(int size) {
-    return build(new SynchronizedPool<List<T>>(size), new Factory<List<T>>() {
-      @Override
-      public List<T> create() {
-        return new ArrayList<>();
-      }
-    }, new Resetter<List<T>>() {
-      @Override
-      public void reset(List<T> object) {
-        object.clear();
-      }
-    });
+    return build(
+        new SynchronizedPool<List<T>>(size),
+        new Factory<List<T>>() {
+          @NonNull
+          @Override
+          public List<T> create() {
+            return new ArrayList<>();
+          }
+        },
+        new Resetter<List<T>>() {
+          @Override
+          public void reset(@NonNull List<T> object) {
+            object.clear();
+          }
+        });
   }
 
-  private static <T extends Poolable> Pool<T> build(Pool<T> pool, Factory<T> factory) {
+  @NonNull
+  private static <T extends Poolable> Pool<T> build(
+      @NonNull Pool<T> pool, @NonNull Factory<T> factory) {
     return build(pool, factory, FactoryPools.<T>emptyResetter());
   }
 
-  private static <T> Pool<T> build(Pool<T> pool, Factory<T> factory,
-      Resetter<T> resetter) {
+  @NonNull
+  private static <T> Pool<T> build(
+      @NonNull Pool<T> pool, @NonNull Factory<T> factory, @NonNull Resetter<T> resetter) {
     return new FactoryPool<>(pool, factory, resetter);
   }
 
+  @NonNull
   @SuppressWarnings("unchecked")
   private static <T> Resetter<T> emptyResetter() {
     return (Resetter<T>) EMPTY_RESETTER;
@@ -117,14 +133,15 @@ public final class FactoryPools {
    * @param <T> The type of Object that will be reset.
    */
   public interface Resetter<T> {
-    void reset(T object);
+    void reset(@NonNull T object);
   }
 
   /**
-   * Allows additional verification to catch errors caused by using objects while they are in
-   * an object pool.
+   * Allows additional verification to catch errors caused by using objects while they are in an
+   * object pool.
    */
   public interface Poolable {
+    @NonNull
     StateVerifier getVerifier();
   }
 
@@ -133,7 +150,7 @@ public final class FactoryPools {
     private final Resetter<T> resetter;
     private final Pool<T> pool;
 
-    FactoryPool(Pool<T> pool, Factory<T> factory, Resetter<T> resetter) {
+    FactoryPool(@NonNull Pool<T> pool, @NonNull Factory<T> factory, @NonNull Resetter<T> resetter) {
       this.pool = pool;
       this.factory = factory;
       this.resetter = resetter;
@@ -155,7 +172,7 @@ public final class FactoryPools {
     }
 
     @Override
-    public boolean release(T instance) {
+    public boolean release(@NonNull T instance) {
       if (instance instanceof Poolable) {
         ((Poolable) instance).getVerifier().setRecycled(true /*isRecycled*/);
       }

@@ -5,6 +5,8 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.text.TextUtils;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import com.bumptech.glide.load.ImageHeaderParser;
 import com.bumptech.glide.load.ImageHeaderParserUtils;
 import com.bumptech.glide.load.engine.bitmap_recycle.ArrayPool;
@@ -24,13 +26,15 @@ class ThumbnailStreamOpener {
   private final ContentResolver contentResolver;
   private final List<ImageHeaderParser> parsers;
 
-  public ThumbnailStreamOpener(
-      List<ImageHeaderParser> parsers, ThumbnailQuery query, ArrayPool byteArrayPool,
+  ThumbnailStreamOpener(
+      List<ImageHeaderParser> parsers,
+      ThumbnailQuery query,
+      ArrayPool byteArrayPool,
       ContentResolver contentResolver) {
     this(parsers, DEFAULT_SERVICE, query, byteArrayPool, contentResolver);
   }
 
-  public ThumbnailStreamOpener(
+  ThumbnailStreamOpener(
       List<ImageHeaderParser> parsers,
       FileService service,
       ThumbnailQuery query,
@@ -43,13 +47,13 @@ class ThumbnailStreamOpener {
     this.parsers = parsers;
   }
 
-  public int getOrientation(Uri uri) {
+  int getOrientation(Uri uri) {
     InputStream is = null;
     try {
       is = contentResolver.openInputStream(uri);
       return ImageHeaderParserUtils.getOrientation(parsers, is, byteArrayPool);
-      // openInputStream can throw NPEs.
-    } catch (IOException | NullPointerException e) {
+      // PMD.AvoidCatchingNPE framework method openInputStream can throw NPEs.
+    } catch (@SuppressWarnings("PMD.AvoidCatchingNPE") IOException | NullPointerException e) {
       if (Log.isLoggable(TAG, Log.DEBUG)) {
         Log.d(TAG, "Failed to open uri: " + uri, e);
       }
@@ -66,37 +70,51 @@ class ThumbnailStreamOpener {
   }
 
   public InputStream open(Uri uri) throws FileNotFoundException {
-    Uri thumbnailUri = null;
-    InputStream inputStream = null;
+    String path = getPath(uri);
+    if (TextUtils.isEmpty(path)) {
+      return null;
+    }
 
-    final Cursor cursor = query.query(uri);
+    File file = service.get(path);
+    if (!isValid(file)) {
+      return null;
+    }
+
+    Uri thumbnailUri = Uri.fromFile(file);
     try {
-      if (cursor == null || !cursor.moveToFirst()) {
-        return null;
-      }
-      String path = cursor.getString(0);
-      if (TextUtils.isEmpty(path)) {
-        return null;
-      }
+      return contentResolver.openInputStream(thumbnailUri);
+      // PMD.AvoidCatchingNPE framework method openInputStream can throw NPEs.
+    } catch (
+        @SuppressWarnings("PMD.AvoidCatchingNPE")
+        NullPointerException e) {
+      throw (FileNotFoundException)
+          new FileNotFoundException("NPE opening uri: " + uri + " -> " + thumbnailUri).initCause(e);
+    }
+  }
 
-      File file = service.get(path);
-      if (service.exists(file) && service.length(file) > 0) {
-        thumbnailUri = Uri.fromFile(file);
+  @Nullable
+  private String getPath(@NonNull Uri uri) {
+    Cursor cursor = null;
+    try {
+      cursor = query.query(uri);
+      if (cursor != null && cursor.moveToFirst()) {
+        return cursor.getString(0);
+      } else {
+        return null;
       }
+    } catch (SecurityException e) {
+      if (Log.isLoggable(TAG, Log.DEBUG)) {
+        Log.d(TAG, "Failed to query for thumbnail for Uri: " + uri, e);
+      }
+      return null;
     } finally {
       if (cursor != null) {
         cursor.close();
       }
     }
-    if (thumbnailUri != null) {
-      try {
-        inputStream = contentResolver.openInputStream(thumbnailUri);
-        // openInputStream can throw NPEs.
-      } catch (NullPointerException e) {
-        throw (FileNotFoundException)
-          new FileNotFoundException("NPE opening uri: " + thumbnailUri).initCause(e);
-      }
-    }
-    return inputStream;
+  }
+
+  private boolean isValid(File file) {
+    return service.exists(file) && 0 < service.length(file);
   }
 }

@@ -2,6 +2,8 @@ package com.bumptech.glide.util;
 
 import android.text.TextUtils;
 import android.util.Log;
+import androidx.annotation.NonNull;
+import androidx.annotation.Nullable;
 import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
@@ -17,15 +19,18 @@ public final class ContentLengthInputStream extends FilterInputStream {
   private final long contentLength;
   private int readSoFar;
 
-  public static InputStream obtain(InputStream other, String contentLengthHeader) {
+  @NonNull
+  public static InputStream obtain(
+      @NonNull InputStream other, @Nullable String contentLengthHeader) {
     return obtain(other, parseContentLength(contentLengthHeader));
   }
 
-  public static InputStream obtain(InputStream other, long contentLength) {
+  @NonNull
+  public static InputStream obtain(@NonNull InputStream other, long contentLength) {
     return new ContentLengthInputStream(other, contentLength);
   }
 
-  private static int parseContentLength(String contentLengthHeader) {
+  private static int parseContentLength(@Nullable String contentLengthHeader) {
     int result = UNKNOWN;
     if (!TextUtils.isEmpty(contentLengthHeader)) {
       try {
@@ -39,7 +44,7 @@ public final class ContentLengthInputStream extends FilterInputStream {
     return result;
   }
 
-  ContentLengthInputStream(InputStream in, long contentLength) {
+  private ContentLengthInputStream(@NonNull InputStream in, long contentLength) {
     super(in);
     this.contentLength = contentLength;
   }
@@ -47,7 +52,7 @@ public final class ContentLengthInputStream extends FilterInputStream {
   @Override
   public synchronized int available() throws IOException {
     return (int) Math.max(contentLength - readSoFar, in.available());
- }
+  }
 
   @Override
   public synchronized int read() throws IOException {
@@ -70,9 +75,12 @@ public final class ContentLengthInputStream extends FilterInputStream {
     if (read >= 0) {
       readSoFar += read;
     } else if (contentLength - readSoFar > 0) {
-      throw new IOException("Failed to read all expected data"
-          + ", expected: " + contentLength
-          + ", but read: " + readSoFar);
+      throw new IOException(
+          "Failed to read all expected data"
+              + ", expected: "
+              + contentLength
+              + ", but read: "
+              + readSoFar);
     }
     return read;
   }

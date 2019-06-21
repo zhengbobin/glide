@@ -1,7 +1,7 @@
 package com.bumptech.glide.load.engine.bitmap_recycle;
 
 import android.graphics.Bitmap;
-import android.support.annotation.NonNull;
+import androidx.annotation.NonNull;
 
 /**
  * An {@link com.bumptech.glide.load.engine.bitmap_recycle.BitmapPool BitmapPool} implementation
@@ -10,7 +10,7 @@ import android.support.annotation.NonNull;
  */
 public class BitmapPoolAdapter implements BitmapPool {
   @Override
-  public int getMaxSize() {
+  public long getMaxSize() {
     return 0;
   }
 
