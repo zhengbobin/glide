@@ -1,8 +1,8 @@
 package com.bumptech.glide.load.data;
 
 import static org.junit.Assert.fail;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.bumptech.glide.load.engine.bitmap_recycle.ArrayPool;

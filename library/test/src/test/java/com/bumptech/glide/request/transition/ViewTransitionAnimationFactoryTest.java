@@ -1,8 +1,8 @@
 package com.bumptech.glide.request.transition;
 
 import static org.junit.Assert.assertEquals;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -50,7 +50,7 @@ public class ViewTransitionAnimationFactoryTest {
         factory.build(DataSource.DATA_DISK_CACHE, true /*isFirstResource*/);
 
     Animation animation = mock(Animation.class);
-    when(viewTransitionAnimationFactory.build(any(Context.class))).thenReturn(animation);
+    when(viewTransitionAnimationFactory.build(anyContextOrNull())).thenReturn(animation);
 
     Transition.ViewAdapter adapter = mock(Transition.ViewAdapter.class);
     View view = mock(View.class);
@@ -58,5 +58,9 @@ public class ViewTransitionAnimationFactoryTest {
     transition.transition(new Object(), adapter);
 
     verify(view).startAnimation(eq(animation));
+  }
+
+  private static Context anyContextOrNull() {
+    return any();
   }
 }

@@ -8,15 +8,22 @@ import static org.junit.Assert.assertNotNull;
 import static org.junit.Assert.assertTrue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
+import static org.robolectric.annotation.LooperMode.Mode.LEGACY;
 
 import android.app.Activity;
 import android.content.Context;
 import android.content.ContextWrapper;
 import android.os.Build;
+import android.os.Handler;
 import android.os.Looper;
+import android.view.LayoutInflater;
+import androidx.annotation.Nullable;
 import androidx.annotation.RequiresApi;
 import androidx.fragment.app.Fragment;
 import androidx.fragment.app.FragmentActivity;
+import androidx.fragment.app.FragmentController;
+import androidx.fragment.app.FragmentHostCallback;
+import androidx.test.core.app.ApplicationProvider;
 import com.bumptech.glide.RequestManager;
 import com.bumptech.glide.tests.BackgroundUtil.BackgroundTester;
 import com.bumptech.glide.tests.GlideShadowLooper;
@@ -30,24 +37,28 @@ import org.junit.runner.RunWith;
 import org.mockito.Mockito;
 import org.robolectric.Robolectric;
 import org.robolectric.RobolectricTestRunner;
-import org.robolectric.RuntimeEnvironment;
 import org.robolectric.Shadows;
 import org.robolectric.android.controller.ActivityController;
 import org.robolectric.annotation.Config;
+import org.robolectric.annotation.LooperMode;
 
+@LooperMode(LEGACY)
 @RunWith(RobolectricTestRunner.class)
 @Config(sdk = 18, shadows = GlideShadowLooper.class)
 public class RequestManagerRetrieverTest {
   @Rule public TearDownGlide tearDownGlide = new TearDownGlide();
 
   private static final String PARENT_TAG = "parent";
+  private Context appContext;
   private RetrieverHarness[] harnesses;
   private RequestManagerRetriever retriever;
   private int initialSdkVersion;
 
   @Before
   public void setUp() {
-    retriever = new RequestManagerRetriever(null /*factory*/);
+    appContext = ApplicationProvider.getApplicationContext();
+
+    retriever = new RequestManagerRetriever(/*factory=*/ null);
 
     harnesses =
         new RetrieverHarness[] {new DefaultRetrieverHarness(), new SupportRetrieverHarness()};
@@ -153,6 +164,23 @@ public class RequestManagerRetrieverTest {
     Fragment fragment = new Fragment();
     activity.getSupportFragmentManager().beginTransaction().add(fragment, PARENT_TAG).commit();
     activity.getSupportFragmentManager().executePendingTransactions();
+
+    RequestManager manager = retriever.get(fragment);
+    assertEquals(manager, retriever.get(fragment));
+  }
+
+  @Test
+  public void testSupportCanGetRequestManagerFromFragment_nonActivityController() {
+    FragmentController controller =
+        FragmentController.createController(new NonActivityHostCallback(appContext));
+    controller.attachHost(/*fragment=*/ null);
+    controller.dispatchCreate();
+    controller.dispatchStart();
+    controller.dispatchResume();
+
+    Fragment fragment = new Fragment();
+    controller.getSupportFragmentManager().beginTransaction().add(fragment, PARENT_TAG).commit();
+    controller.getSupportFragmentManager().executePendingTransactions();
 
     RequestManager manager = retriever.get(fragment);
     assertEquals(manager, retriever.get(fragment));
@@ -271,28 +299,53 @@ public class RequestManagerRetrieverTest {
 
   @Test
   public void testHandlesContextWrappersForApplication() {
-    ContextWrapper contextWrapper = new ContextWrapper(RuntimeEnvironment.application);
-    RequestManager requestManager = retriever.get(RuntimeEnvironment.application);
+    ContextWrapper contextWrapper = new ContextWrapper(appContext);
+    RequestManager requestManager = retriever.get(appContext);
 
     assertEquals(requestManager, retriever.get(contextWrapper));
   }
 
   @Test
+  public void testHandlesContextWrapperWithoutApplication() throws Exception {
+    // Create a Context which is not associated with an Application instance.
+    Context baseContext =
+        appContext.createPackageContext(appContext.getPackageName(), /*flags=*/ 0);
+
+    // Sanity-check that Robolectric behaves the same as the framework.
+    assertThat(baseContext.getApplicationContext()).isNull();
+
+    // If a wrapper provides a non-null application Context, unwrapping should terminate at this
+    // wrapper so that the returned Context has a non-null #getApplicationContext.
+    Context contextWithApplicationContext =
+        new ContextWrapper(baseContext) {
+          @Override
+          public Context getApplicationContext() {
+            return this;
+          }
+        };
+
+    Context wrappedContext = new ContextWrapper(contextWithApplicationContext);
+    RequestManager requestManager = retriever.get(appContext);
+
+    assertEquals(requestManager, retriever.get(wrappedContext));
+  }
+
+  @Test
   public void testReturnsNonNullManagerIfGivenApplicationContext() {
-    assertNotNull(retriever.get(RuntimeEnvironment.application));
+    assertNotNull(retriever.get(appContext));
   }
 
   @Test
   public void testApplicationRequestManagerIsNotPausedWhenRetrieved() {
-    RequestManager manager = retriever.get(RuntimeEnvironment.application);
+    RequestManager manager = retriever.get(appContext);
     assertFalse(manager.isPaused());
   }
 
   @Test
   public void testApplicationRequestManagerIsNotReResumedAfterFirstRetrieval() {
-    RequestManager manager = retriever.get(RuntimeEnvironment.application);
+    RequestManager manager = retriever.get(appContext);
     manager.pauseRequests();
-    manager = retriever.get(RuntimeEnvironment.application);
+    manager = retriever.get(appContext);
     assertTrue(manager.isPaused());
   }
 
@@ -303,7 +356,7 @@ public class RequestManagerRetrieverTest {
         new BackgroundTester() {
           @Override
           public void runTest() {
-            retriever.get(RuntimeEnvironment.application);
+            retriever.get(appContext);
           }
         });
   }
@@ -458,6 +511,29 @@ public class RequestManagerRetrieverTest {
           .add(fragment, RequestManagerRetriever.FRAGMENT_TAG)
           .commitAllowingStateLoss();
       controller.get().getSupportFragmentManager().executePendingTransactions();
+    }
+  }
+
+  /** Simple callback for creating an Activity-less Fragment host. */
+  private final class NonActivityHostCallback
+      extends FragmentHostCallback<RequestManagerRetrieverTest> {
+
+    private final Context context;
+
+    NonActivityHostCallback(Context context) {
+      super(context, new Handler(Looper.getMainLooper()), /*windowAnimations=*/ 0);
+      this.context = context;
+    }
+
+    @Override
+    public LayoutInflater onGetLayoutInflater() {
+      return LayoutInflater.from(context).cloneInContext(context);
+    }
+
+    @Nullable
+    @Override
+    public RequestManagerRetrieverTest onGetHost() {
+      return RequestManagerRetrieverTest.this;
     }
   }
 }

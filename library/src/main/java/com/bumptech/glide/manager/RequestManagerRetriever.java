@@ -108,7 +108,11 @@ public class RequestManagerRetriever implements Handler.Callback {
         return get((FragmentActivity) context);
       } else if (context instanceof Activity) {
         return get((Activity) context);
-      } else if (context instanceof ContextWrapper) {
+      } else if (context instanceof ContextWrapper
+          // Only unwrap a ContextWrapper if the baseContext has a non-null application context.
+          // Context#createPackageContext may return a Context without an Application instance,
+          // in which case a ContextWrapper may be used to attach one.
+          && ((ContextWrapper) context).getBaseContext().getApplicationContext() != null) {
         return get(((ContextWrapper) context).getBaseContext());
       }
     }
@@ -130,13 +134,13 @@ public class RequestManagerRetriever implements Handler.Callback {
   @NonNull
   public RequestManager get(@NonNull Fragment fragment) {
     Preconditions.checkNotNull(
-        fragment.getActivity(),
+        fragment.getContext(),
         "You cannot start a load on a fragment before it is attached or after it is destroyed");
     if (Util.isOnBackgroundThread()) {
-      return get(fragment.getActivity().getApplicationContext());
+      return get(fragment.getContext().getApplicationContext());
     } else {
       FragmentManager fm = fragment.getChildFragmentManager();
-      return supportFragmentGet(fragment.getActivity(), fm, fragment, fragment.isVisible());
+      return supportFragmentGet(fragment.getContext(), fm, fragment, fragment.isVisible());
     }
   }
 
@@ -174,7 +178,7 @@ public class RequestManagerRetriever implements Handler.Callback {
     // prefer to just fall back to the Activity directly.
     if (activity instanceof FragmentActivity) {
       Fragment fragment = findSupportFragment(view, (FragmentActivity) activity);
-      return fragment != null ? get(fragment) : get(activity);
+      return fragment != null ? get(fragment) : get((FragmentActivity) activity);
     }
 
     // Standard Fragments.
@@ -297,7 +301,7 @@ public class RequestManagerRetriever implements Handler.Callback {
   }
 
   @Nullable
-  private Activity findActivity(@NonNull Context context) {
+  private static Activity findActivity(@NonNull Context context) {
     if (context instanceof Activity) {
       return (Activity) context;
     } else if (context instanceof ContextWrapper) {
@@ -384,15 +388,17 @@ public class RequestManagerRetriever implements Handler.Callback {
   }
 
   @NonNull
-  SupportRequestManagerFragment getSupportRequestManagerFragment(FragmentActivity activity) {
+  SupportRequestManagerFragment getSupportRequestManagerFragment(
+      Context context, FragmentManager fragmentManager) {
     return getSupportRequestManagerFragment(
-        activity.getSupportFragmentManager(), /*parentHint=*/ null, isActivityVisible(activity));
+        fragmentManager, /*parentHint=*/ null, isActivityVisible(context));
   }
 
-  private static boolean isActivityVisible(Activity activity) {
+  private static boolean isActivityVisible(Context context) {
     // This is a poor heuristic, but it's about all we have. We'd rather err on the side of visible
     // and start requests than on the side of invisible and ignore valid requests.
-    return !activity.isFinishing();
+    Activity activity = findActivity(context);
+    return activity == null || !activity.isFinishing();
   }
 
   @NonNull

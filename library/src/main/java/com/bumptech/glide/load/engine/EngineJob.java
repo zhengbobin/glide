@@ -1,5 +1,6 @@
 package com.bumptech.glide.load.engine;
 
+import androidx.annotation.GuardedBy;
 import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
 import androidx.core.util.Pools;
@@ -148,7 +149,8 @@ class EngineJob<R> implements DecodeJob.Callback<R>, Poolable {
 
   @SuppressWarnings("WeakerAccess")
   @Synthetic
-  synchronized void callCallbackOnResourceReady(ResourceCallback cb) {
+  @GuardedBy("this")
+  void callCallbackOnResourceReady(ResourceCallback cb) {
     try {
       // This is overly broad, some Glide code is actually called here, but it's much
       // simpler to encapsulate here than to do so at the actual call point in the
@@ -161,7 +163,8 @@ class EngineJob<R> implements DecodeJob.Callback<R>, Poolable {
 
   @SuppressWarnings("WeakerAccess")
   @Synthetic
-  synchronized void callCallbackOnLoadFailed(ResourceCallback cb) {
+  @GuardedBy("this")
+  void callCallbackOnLoadFailed(ResourceCallback cb) {
     // This is overly broad, some Glide code is actually called here, but it's much
     // simpler to encapsulate here than to do so at the actual call point in the Request
     // implementation.
@@ -271,17 +274,22 @@ class EngineJob<R> implements DecodeJob.Callback<R>, Poolable {
 
   @SuppressWarnings("WeakerAccess")
   @Synthetic
-  synchronized void decrementPendingCallbacks() {
-    stateVerifier.throwIfRecycled();
-    Preconditions.checkArgument(isDone(), "Not yet complete!");
-    int decremented = pendingCallbacks.decrementAndGet();
-    Preconditions.checkArgument(decremented >= 0, "Can't decrement below 0");
-    if (decremented == 0) {
-      if (engineResource != null) {
-        engineResource.release();
-      }
+  void decrementPendingCallbacks() {
+    EngineResource<?> toRelease = null;
+    synchronized (this) {
+      stateVerifier.throwIfRecycled();
+      Preconditions.checkArgument(isDone(), "Not yet complete!");
+      int decremented = pendingCallbacks.decrementAndGet();
+      Preconditions.checkArgument(decremented >= 0, "Can't decrement below 0");
+      if (decremented == 0) {
+        toRelease = engineResource;
 
-      release();
+        release();
+      }
+    }
+
+    if (toRelease != null) {
+      toRelease.release();
     }
   }
 
@@ -382,12 +390,16 @@ class EngineJob<R> implements DecodeJob.Callback<R>, Poolable {
 
     @Override
     public void run() {
-      synchronized (EngineJob.this) {
-        if (cbs.contains(cb)) {
-          callCallbackOnLoadFailed(cb);
-        }
+      // Make sure we always acquire the request lock, then the EngineJob lock to avoid deadlock
+      // (b/136032534).
+      synchronized (cb.getLock()) {
+        synchronized (EngineJob.this) {
+          if (cbs.contains(cb)) {
+            callCallbackOnLoadFailed(cb);
+          }
 
-        decrementPendingCallbacks();
+          decrementPendingCallbacks();
+        }
       }
     }
   }
@@ -402,14 +414,18 @@ class EngineJob<R> implements DecodeJob.Callback<R>, Poolable {
 
     @Override
     public void run() {
-      synchronized (EngineJob.this) {
-        if (cbs.contains(cb)) {
-          // Acquire for this particular callback.
-          engineResource.acquire();
-          callCallbackOnResourceReady(cb);
-          removeCallback(cb);
+      // Make sure we always acquire the request lock, then the EngineJob lock to avoid deadlock
+      // (b/136032534).
+      synchronized (cb.getLock()) {
+        synchronized (EngineJob.this) {
+          if (cbs.contains(cb)) {
+            // Acquire for this particular callback.
+            engineResource.acquire();
+            callCallbackOnResourceReady(cb);
+            removeCallback(cb);
+          }
+          decrementPendingCallbacks();
         }
-        decrementPendingCallbacks();
       }
     }
   }

@@ -3,8 +3,8 @@ package com.bumptech.glide;
 import static com.bumptech.glide.test.Matchers.anyDrawable;
 import static com.bumptech.glide.test.Matchers.anyDrawableTarget;
 import static com.google.common.truth.Truth.assertThat;
-import static org.mockito.Mockito.any;
-import static org.mockito.Mockito.anyBoolean;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.Mockito.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -157,7 +157,47 @@ public class RequestTest {
 
   /** Tests #2555. */
   @Test
-  public void onStop_withRequestWithOnlyFullInProgress_nullsOutDrawableInView() {
+  public void clear_withRequestWithOnlyFullInProgress_nullsOutDrawableInView() {
+    final WaitModel<Integer> mainModel = WaitModelLoader.Factory.waitOn(ResourceIds.raw.canonical);
+    concurrency.loadUntilFirstFinish(
+        GlideApp.with(context)
+            .load(mainModel)
+            .listener(requestListener)
+            .thumbnail(
+                GlideApp.with(context)
+                    .load(ResourceIds.raw.canonical)
+                    .listener(requestListener)
+                    .override(100, 100)),
+        imageView);
+
+    concurrency.runOnMainThread(
+        new Runnable() {
+          @Override
+          public void run() {
+            GlideApp.with(context).clear(imageView);
+          }
+        });
+
+    verify(requestListener, never())
+        .onResourceReady(
+            anyDrawable(),
+            any(),
+            anyDrawableTarget(),
+            eq(DataSource.DATA_DISK_CACHE),
+            anyBoolean());
+    verify(requestListener, never())
+        .onResourceReady(
+            anyDrawable(),
+            any(),
+            anyDrawableTarget(),
+            eq(DataSource.RESOURCE_DISK_CACHE),
+            anyBoolean());
+    assertThat(imageView.getDrawable()).isNull();
+    mainModel.countDown();
+  }
+
+  @Test
+  public void clear_withRequestWithOnlyFullInProgress_doesNotNullOutDrawableInView() {
     final WaitModel<Integer> mainModel = WaitModelLoader.Factory.waitOn(ResourceIds.raw.canonical);
     concurrency.loadUntilFirstFinish(
         GlideApp.with(context)
@@ -192,7 +232,7 @@ public class RequestTest {
             anyDrawableTarget(),
             eq(DataSource.RESOURCE_DISK_CACHE),
             anyBoolean());
-    assertThat(imageView.getDrawable()).isNull();
+    assertThat(imageView.getDrawable()).isNotNull();
     mainModel.countDown();
   }
 

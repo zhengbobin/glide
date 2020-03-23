@@ -8,6 +8,7 @@ import android.util.Log;
 import androidx.annotation.GuardedBy;
 import androidx.annotation.VisibleForTesting;
 import java.io.File;
+import java.util.Arrays;
 
 /**
  * State and constants for interacting with {@link android.graphics.Bitmap.Config#HARDWARE} on
@@ -23,7 +24,9 @@ public final class HardwareConfigState {
    *
    * @see #FD_SIZE_LIST
    */
-  @VisibleForTesting static final int MIN_HARDWARE_DIMENSION = 128;
+  @VisibleForTesting static final int MIN_HARDWARE_DIMENSION_O = 128;
+
+  private static final int MIN_HARDWARE_DIMENSION_P = 0;
 
   /**
    * Allows us to check to make sure we're not exceeding the FD limit for a process with hardware
@@ -49,12 +52,21 @@ public final class HardwareConfigState {
   /**
    * 700 with an error of 50 Bitmaps in between at two FDs each lets us use up to 800 FDs for
    * hardware Bitmaps.
+   *
+   * <p>Prior to P, the limit per process was 1024 FDs. In P, the limit was updated to 32k FDs per
+   * process.
+   *
+   * <p>Access to this variable will be removed in a future version without deprecation.
    */
-  private static final int MAXIMUM_FDS_FOR_HARDWARE_CONFIGS = 700;
+  private static final int MAXIMUM_FDS_FOR_HARDWARE_CONFIGS_O = 700;
+  // 20k.
+  private static final int MAXIMUM_FDS_FOR_HARDWARE_CONFIGS_P = 20000;
 
   private static volatile HardwareConfigState instance;
 
   private final boolean isHardwareConfigAllowedByDeviceModel;
+  private final int fdCountLimit;
+  private final int minHardwareDimension;
 
   @GuardedBy("this")
   private int decodesSinceLastFdCheck;
@@ -76,7 +88,13 @@ public final class HardwareConfigState {
   @VisibleForTesting
   HardwareConfigState() {
     isHardwareConfigAllowedByDeviceModel = isHardwareConfigAllowedByDeviceModel();
-    // Singleton constructor.
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+      fdCountLimit = MAXIMUM_FDS_FOR_HARDWARE_CONFIGS_P;
+      minHardwareDimension = MIN_HARDWARE_DIMENSION_P;
+    } else {
+      fdCountLimit = MAXIMUM_FDS_FOR_HARDWARE_CONFIGS_O;
+      minHardwareDimension = MIN_HARDWARE_DIMENSION_O;
+    }
   }
 
   public boolean isHardwareConfigAllowed(
@@ -91,8 +109,8 @@ public final class HardwareConfigState {
       return false;
     }
 
-    return targetWidth >= MIN_HARDWARE_DIMENSION
-        && targetHeight >= MIN_HARDWARE_DIMENSION
+    return targetWidth >= minHardwareDimension
+        && targetHeight >= minHardwareDimension
         // Make sure to call isFdSizeBelowHardwareLimit last because it has side affects.
         && isFdSizeBelowHardwareLimit();
   }
@@ -115,8 +133,44 @@ public final class HardwareConfigState {
   }
 
   private static boolean isHardwareConfigAllowedByDeviceModel() {
+    return !isHardwareConfigDisallowedByB112551574() && !isHardwareConfigDisallowedByB147430447();
+  }
+
+  private static boolean isHardwareConfigDisallowedByB147430447() {
+    if (Build.VERSION.SDK_INT != Build.VERSION_CODES.O_MR1) {
+      return false;
+    }
+    // This method will only be called once, so simple iteration is reasonable.
+    return Arrays.asList(
+            "ILA X1",
+            "LG-M250",
+            "LG-M320",
+            "LG-Q710AL",
+            "LG-Q710PL",
+            "LGM-K121K",
+            "LGM-K121L",
+            "LGM-K121S",
+            "LGM-X320K",
+            "LGM-X320L",
+            "LGM-X320S",
+            "LGM-X401L",
+            "LGM-X401S",
+            "LM-Q610.FG",
+            "LM-Q610.FGN",
+            "LM-Q617.FG",
+            "LM-Q617.FGN",
+            "LM-Q710.FG",
+            "LM-Q710.FGN",
+            "LM-X220PM",
+            "LM-X220QMA",
+            "LM-X410PM",
+            "SGINO")
+        .contains(Build.MODEL);
+  }
+
+  private static boolean isHardwareConfigDisallowedByB112551574() {
     if (Build.MODEL == null || Build.MODEL.length() < 7) {
-      return true;
+      return false;
     }
     switch (Build.MODEL.substring(0, 7)) {
       case "SM-N935":
@@ -133,9 +187,9 @@ public final class HardwareConfigState {
         // Fall through
       case "SM-A520":
         // Fall through
-        return Build.VERSION.SDK_INT != Build.VERSION_CODES.O;
+        return Build.VERSION.SDK_INT == Build.VERSION_CODES.O;
       default:
-        return true;
+        return false;
     }
   }
 
@@ -143,7 +197,7 @@ public final class HardwareConfigState {
     if (++decodesSinceLastFdCheck >= MINIMUM_DECODES_BETWEEN_FD_CHECKS) {
       decodesSinceLastFdCheck = 0;
       int currentFds = FD_SIZE_LIST.list().length;
-      isFdSizeBelowHardwareLimit = currentFds < MAXIMUM_FDS_FOR_HARDWARE_CONFIGS;
+      isFdSizeBelowHardwareLimit = currentFds < fdCountLimit;
 
       if (!isFdSizeBelowHardwareLimit && Log.isLoggable(Downsampler.TAG, Log.WARN)) {
         Log.w(
@@ -152,7 +206,7 @@ public final class HardwareConfigState {
                 + ", file descriptors "
                 + currentFds
                 + ", limit "
-                + MAXIMUM_FDS_FOR_HARDWARE_CONFIGS);
+                + fdCountLimit);
       }
     }
 

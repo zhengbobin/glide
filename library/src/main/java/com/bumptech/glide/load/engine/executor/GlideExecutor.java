@@ -2,7 +2,9 @@ package com.bumptech.glide.load.engine.executor;
 
 import android.os.StrictMode;
 import android.os.StrictMode.ThreadPolicy;
+import android.text.TextUtils;
 import android.util.Log;
+import androidx.annotation.IntRange;
 import androidx.annotation.NonNull;
 import androidx.annotation.VisibleForTesting;
 import com.bumptech.glide.util.Synthetic;
@@ -45,9 +47,9 @@ public final class GlideExecutor implements ExecutorService {
    * The default thread name prefix for executors from unlimited thread pool used to
    * load/decode/transform data not found in cache.
    */
-  private static final String SOURCE_UNLIMITED_EXECUTOR_NAME = "source-unlimited";
+  private static final String DEFAULT_SOURCE_UNLIMITED_EXECUTOR_NAME = "source-unlimited";
 
-  private static final String ANIMATION_EXECUTOR_NAME = "animation";
+  private static final String DEFAULT_ANIMATION_EXECUTOR_NAME = "animation";
 
   /** The default keep alive time for threads in our cached thread pools in milliseconds. */
   private static final long KEEP_ALIVE_TIME_MS = TimeUnit.SECONDS.toMillis(10);
@@ -62,72 +64,50 @@ public final class GlideExecutor implements ExecutorService {
   private final ExecutorService delegate;
 
   /**
-   * Returns a new fixed thread pool with the default thread count returned from {@link
-   * #calculateBestThreadCount()}, the {@link #DEFAULT_DISK_CACHE_EXECUTOR_NAME} thread name prefix,
-   * and the {@link
-   * com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy#DEFAULT}
+   * Returns a new {@link Builder} with the {@link #DEFAULT_DISK_CACHE_EXECUTOR_THREADS} threads,
+   * {@link #DEFAULT_DISK_CACHE_EXECUTOR_NAME} name and {@link UncaughtThrowableStrategy#DEFAULT}
    * uncaught throwable strategy.
    *
    * <p>Disk cache executors do not allow network operations on their threads.
    */
+  public static GlideExecutor.Builder newDiskCacheBuilder() {
+    return new GlideExecutor.Builder(/*preventNetworkOperations=*/ true)
+        .setThreadCount(DEFAULT_DISK_CACHE_EXECUTOR_THREADS)
+        .setName(DEFAULT_DISK_CACHE_EXECUTOR_NAME);
+  }
+
+  /** Shortcut for calling {@link Builder#build()} on {@link #newDiskCacheBuilder()}. */
   public static GlideExecutor newDiskCacheExecutor() {
-    return newDiskCacheExecutor(
-        DEFAULT_DISK_CACHE_EXECUTOR_THREADS,
-        DEFAULT_DISK_CACHE_EXECUTOR_NAME,
-        UncaughtThrowableStrategy.DEFAULT);
+    return newDiskCacheBuilder().build();
   }
 
   /**
-   * Returns a new fixed thread pool with the default thread count returned from {@link
-   * #calculateBestThreadCount()}, the {@link #DEFAULT_DISK_CACHE_EXECUTOR_NAME} thread name prefix,
-   * and a custom {@link
-   * com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy} uncaught
-   * throwable strategy.
-   *
-   * <p>Disk cache executors do not allow network operations on their threads.
-   *
-   * @param uncaughtThrowableStrategy The {@link
-   *     com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy} to use to
-   *     handle uncaught exceptions.
+   * @deprecated Use {@link #newDiskCacheBuilder()} and {@link
+   *     Builder#setUncaughtThrowableStrategy(UncaughtThrowableStrategy)} instead.
    */
   // Public API.
   @SuppressWarnings("unused")
+  @Deprecated
   public static GlideExecutor newDiskCacheExecutor(
       UncaughtThrowableStrategy uncaughtThrowableStrategy) {
-    return newDiskCacheExecutor(
-        DEFAULT_DISK_CACHE_EXECUTOR_THREADS,
-        DEFAULT_DISK_CACHE_EXECUTOR_NAME,
-        uncaughtThrowableStrategy);
+    return newDiskCacheBuilder().setUncaughtThrowableStrategy(uncaughtThrowableStrategy).build();
   }
 
-  /**
-   * Returns a new fixed thread pool with the given thread count, thread name prefix, and {@link
-   * com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy}.
-   *
-   * <p>Disk cache executors do not allow network operations on their threads.
-   *
-   * @param threadCount The number of threads.
-   * @param name The prefix for each thread name.
-   * @param uncaughtThrowableStrategy The {@link
-   *     com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy} to use to
-   *     handle uncaught exceptions.
-   */
+  /** @deprecated Use {@link #newDiskCacheBuilder()} instead. */
   // Public API.
   @SuppressWarnings("WeakerAccess")
+  @Deprecated
   public static GlideExecutor newDiskCacheExecutor(
       int threadCount, String name, UncaughtThrowableStrategy uncaughtThrowableStrategy) {
-    return new GlideExecutor(
-        new ThreadPoolExecutor(
-            threadCount /* corePoolSize */,
-            threadCount /* maximumPoolSize */,
-            0 /* keepAliveTime */,
-            TimeUnit.MILLISECONDS,
-            new PriorityBlockingQueue<Runnable>(),
-            new DefaultThreadFactory(name, uncaughtThrowableStrategy, true)));
+    return newDiskCacheBuilder()
+        .setThreadCount(threadCount)
+        .setName(name)
+        .setUncaughtThrowableStrategy(uncaughtThrowableStrategy)
+        .build();
   }
 
   /**
-   * Returns a new fixed thread pool with the default thread count returned from {@link
+   * Returns a new {@link Builder} with the default thread count returned from {@link
    * #calculateBestThreadCount()}, the {@link #DEFAULT_SOURCE_EXECUTOR_NAME} thread name prefix, and
    * the {@link
    * com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy#DEFAULT}
@@ -135,58 +115,37 @@ public final class GlideExecutor implements ExecutorService {
    *
    * <p>Source executors allow network operations on their threads.
    */
-  public static GlideExecutor newSourceExecutor() {
-    return newSourceExecutor(
-        calculateBestThreadCount(),
-        DEFAULT_SOURCE_EXECUTOR_NAME,
-        UncaughtThrowableStrategy.DEFAULT);
+  public static GlideExecutor.Builder newSourceBuilder() {
+    return new GlideExecutor.Builder(/*preventNetworkOperations=*/ false)
+        .setThreadCount(calculateBestThreadCount())
+        .setName(DEFAULT_SOURCE_EXECUTOR_NAME);
   }
 
-  /**
-   * Returns a new fixed thread pool with the default thread count returned from {@link
-   * #calculateBestThreadCount()}, the {@link #DEFAULT_SOURCE_EXECUTOR_NAME} thread name prefix, and
-   * a custom {@link
-   * com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy} uncaught
-   * throwable strategy.
-   *
-   * <p>Source executors allow network operations on their threads.
-   *
-   * @param uncaughtThrowableStrategy The {@link
-   *     com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy} to use to
-   *     handle uncaught exceptions.
-   */
+  /** Shortcut for calling {@link Builder#build()} on {@link #newSourceBuilder()}. */
+  public static GlideExecutor newSourceExecutor() {
+    return newSourceBuilder().build();
+  }
+
+  /** @deprecated Use {@link #newSourceBuilder()} instead. */
   // Public API.
   @SuppressWarnings("unused")
+  @Deprecated
   public static GlideExecutor newSourceExecutor(
       UncaughtThrowableStrategy uncaughtThrowableStrategy) {
-    return newSourceExecutor(
-        calculateBestThreadCount(), DEFAULT_SOURCE_EXECUTOR_NAME, uncaughtThrowableStrategy);
+    return newSourceBuilder().setUncaughtThrowableStrategy(uncaughtThrowableStrategy).build();
   }
 
-  /**
-   * Returns a new fixed thread pool with the given thread count, thread name prefix, and {@link
-   * com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy}.
-   *
-   * <p>Source executors allow network operations on their threads.
-   *
-   * @param threadCount The number of threads.
-   * @param name The prefix for each thread name.
-   * @param uncaughtThrowableStrategy The {@link
-   *     com.bumptech.glide.load.engine.executor.GlideExecutor.UncaughtThrowableStrategy} to use to
-   *     handle uncaught exceptions.
-   */
+  /** @deprecated Use {@link #newSourceBuilder()} instead. */
   // Public API.
   @SuppressWarnings("WeakerAccess")
+  @Deprecated
   public static GlideExecutor newSourceExecutor(
       int threadCount, String name, UncaughtThrowableStrategy uncaughtThrowableStrategy) {
-    return new GlideExecutor(
-        new ThreadPoolExecutor(
-            threadCount /* corePoolSize */,
-            threadCount /* maximumPoolSize */,
-            0 /* keepAliveTime */,
-            TimeUnit.MILLISECONDS,
-            new PriorityBlockingQueue<Runnable>(),
-            new DefaultThreadFactory(name, uncaughtThrowableStrategy, false)));
+    return newSourceBuilder()
+        .setThreadCount(threadCount)
+        .setName(name)
+        .setUncaughtThrowableStrategy(uncaughtThrowableStrategy)
+        .build();
   }
 
   /**
@@ -211,14 +170,16 @@ public final class GlideExecutor implements ExecutorService {
             TimeUnit.MILLISECONDS,
             new SynchronousQueue<Runnable>(),
             new DefaultThreadFactory(
-                SOURCE_UNLIMITED_EXECUTOR_NAME, UncaughtThrowableStrategy.DEFAULT, false)));
+                DEFAULT_SOURCE_UNLIMITED_EXECUTOR_NAME, UncaughtThrowableStrategy.DEFAULT, false)));
   }
 
   /**
-   * Returns a new cached thread pool that defaults to either one or two threads depending on the
+   * Returns a new fixed thread pool that defaults to either one or two threads depending on the
    * number of available cores to use when loading frames of animations.
+   *
+   * <p>Animation executors do not allow network operations on their threads.
    */
-  public static GlideExecutor newAnimationExecutor() {
+  public static GlideExecutor.Builder newAnimationBuilder() {
     int bestThreadCount = calculateBestThreadCount();
     // We don't want to add a ton of threads running animations in parallel with our source and
     // disk cache executors. Doing so adds unnecessary CPU load and can also dramatically increase
@@ -227,25 +188,26 @@ public final class GlideExecutor implements ExecutorService {
     // once.
     int maximumPoolSize = bestThreadCount >= 4 ? 2 : 1;
 
-    return newAnimationExecutor(maximumPoolSize, UncaughtThrowableStrategy.DEFAULT);
+    return new GlideExecutor.Builder(/*preventNetworkOperations=*/ true)
+        .setThreadCount(maximumPoolSize)
+        .setName(DEFAULT_ANIMATION_EXECUTOR_NAME);
   }
 
-  /**
-   * Returns a new cached thread pool with the given thread count and {@link
-   * UncaughtThrowableStrategy} to use when loading frames of animations.
-   */
+  /** Shortcut for calling {@link Builder#build()} on {@link #newAnimationBuilder()}. */
+  public static GlideExecutor newAnimationExecutor() {
+    return newAnimationBuilder().build();
+  }
+
+  /** @deprecated Use {@link #newAnimationBuilder()} instead. */
   // Public API.
   @SuppressWarnings("WeakerAccess")
+  @Deprecated
   public static GlideExecutor newAnimationExecutor(
       int threadCount, UncaughtThrowableStrategy uncaughtThrowableStrategy) {
-    return new GlideExecutor(
-        new ThreadPoolExecutor(
-            0 /* corePoolSize */,
-            threadCount,
-            KEEP_ALIVE_TIME_MS,
-            TimeUnit.MILLISECONDS,
-            new PriorityBlockingQueue<Runnable>(),
-            new DefaultThreadFactory(ANIMATION_EXECUTOR_NAME, uncaughtThrowableStrategy, true)));
+    return newAnimationBuilder()
+        .setThreadCount(threadCount)
+        .setUncaughtThrowableStrategy(uncaughtThrowableStrategy)
+        .build();
   }
 
   @VisibleForTesting
@@ -436,6 +398,89 @@ public final class GlideExecutor implements ExecutorService {
           };
       threadNum++;
       return result;
+    }
+  }
+
+  /** A builder for {@link GlideExecutor}s. */
+  public static final class Builder {
+    /**
+     * Prevents core and non-core threads from timing out ever if provided to {@link
+     * #setThreadTimeoutMillis(long)}.
+     */
+    public static final long NO_THREAD_TIMEOUT = 0L;
+
+    private final boolean preventNetworkOperations;
+
+    private int corePoolSize;
+    private int maximumPoolSize;
+
+    @NonNull
+    private UncaughtThrowableStrategy uncaughtThrowableStrategy = UncaughtThrowableStrategy.DEFAULT;
+
+    private String name;
+    private long threadTimeoutMillis;
+
+    @Synthetic
+    Builder(boolean preventNetworkOperations) {
+      this.preventNetworkOperations = preventNetworkOperations;
+    }
+
+    /**
+     * Allows both core and non-core threads in the executor to be terminated if no tasks arrive for
+     * at least the given timeout milliseconds.
+     *
+     * <p>Use {@link #NO_THREAD_TIMEOUT} to remove a previously set timeout.
+     */
+    public Builder setThreadTimeoutMillis(long threadTimeoutMillis) {
+      this.threadTimeoutMillis = threadTimeoutMillis;
+      return this;
+    }
+
+    /** Sets the maximum number of threads to use. */
+    public Builder setThreadCount(@IntRange(from = 1) int threadCount) {
+      corePoolSize = threadCount;
+      maximumPoolSize = threadCount;
+      return this;
+    }
+
+    /**
+     * Sets the {@link UncaughtThrowableStrategy} to use for unexpected exceptions thrown by tasks
+     * on {@link GlideExecutor}s built by this {@code Builder}.
+     */
+    public Builder setUncaughtThrowableStrategy(@NonNull UncaughtThrowableStrategy strategy) {
+      this.uncaughtThrowableStrategy = strategy;
+      return this;
+    }
+
+    /**
+     * Sets the prefix to use for each thread name created by any {@link GlideExecutor}s built by
+     * this {@code Builder}.
+     */
+    public Builder setName(String name) {
+      this.name = name;
+      return this;
+    }
+
+    /** Builds a new {@link GlideExecutor} with any previously specified options. */
+    public GlideExecutor build() {
+      if (TextUtils.isEmpty(name)) {
+        throw new IllegalArgumentException(
+            "Name must be non-null and non-empty, but given: " + name);
+      }
+      ThreadPoolExecutor executor =
+          new ThreadPoolExecutor(
+              corePoolSize,
+              maximumPoolSize,
+              /*keepAliveTime=*/ threadTimeoutMillis,
+              TimeUnit.MILLISECONDS,
+              new PriorityBlockingQueue<Runnable>(),
+              new DefaultThreadFactory(name, uncaughtThrowableStrategy, preventNetworkOperations));
+
+      if (threadTimeoutMillis != NO_THREAD_TIMEOUT) {
+        executor.allowCoreThreadTimeOut(true);
+      }
+
+      return new GlideExecutor(executor);
     }
   }
 }

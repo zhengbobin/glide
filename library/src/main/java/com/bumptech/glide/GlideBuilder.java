@@ -6,6 +6,7 @@ import android.util.Log;
 import androidx.annotation.NonNull;
 import androidx.annotation.Nullable;
 import androidx.collection.ArrayMap;
+import androidx.core.os.BuildCompat;
 import com.bumptech.glide.Glide.RequestOptionsFactory;
 import com.bumptech.glide.load.DataSource;
 import com.bumptech.glide.load.engine.Engine;
@@ -36,6 +37,7 @@ import java.util.List;
 import java.util.Map;
 
 /** A builder class for setting default structural classes for Glide to use. */
+@SuppressWarnings("PMD.ImmutableField")
 public final class GlideBuilder {
   private final Map<Class<?>, TransitionOptions<?, ?>> defaultTransitionOptions = new ArrayMap<>();
   private Engine engine;
@@ -61,6 +63,7 @@ public final class GlideBuilder {
   private boolean isActiveResourceRetentionAllowed;
   @Nullable private List<RequestListener<Object>> defaultRequestListeners;
   private boolean isLoggingRequestOriginsEnabled;
+
   private boolean isImageDecoderEnabledForBitmaps;
 
   /**
@@ -454,6 +457,10 @@ public final class GlideBuilder {
    * Set to {@code true} to make Glide use {@link android.graphics.ImageDecoder} when decoding
    * {@link Bitmap}s on Android P and higher.
    *
+   * <p>Calls to this method on versions of Android less than Q are ignored. Although ImageDecoder
+   * was added in Android O a bug prevents it from scaling images with exif orientations until Q.
+   * See b/136096254.
+   *
    * <p>Specifically {@link android.graphics.ImageDecoder} will be used in place of {@link
    * com.bumptech.glide.load.resource.bitmap.Downsampler} and {@link android.graphics.BitmapFactory}
    * to decode {@link Bitmap}s. GIFs, resources, and all other types of {@link
@@ -473,6 +480,9 @@ public final class GlideBuilder {
    * which may not agree.
    */
   public GlideBuilder setImageDecoderEnabledForBitmaps(boolean isEnabled) {
+    if (!BuildCompat.isAtLeastQ()) {
+      return this;
+    }
     isImageDecoderEnabledForBitmaps = isEnabled;
     return this;
   }

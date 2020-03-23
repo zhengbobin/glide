@@ -6,16 +6,17 @@ import static com.bumptech.glide.request.RequestOptions.placeholderOf;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertNotNull;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Matchers.isA;
-import static org.mockito.Matchers.notNull;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
+import static org.mockito.ArgumentMatchers.notNull;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.robolectric.annotation.LooperMode.Mode.LEGACY;
 
 import android.content.ContentResolver;
 import android.content.Context;
@@ -61,7 +62,6 @@ import com.bumptech.glide.tests.GlideShadowLooper;
 import com.bumptech.glide.tests.TearDownGlide;
 import com.bumptech.glide.tests.Util;
 import com.bumptech.glide.testutil.TestResourceUtil;
-import com.bumptech.glide.util.Preconditions;
 import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.InputStream;
@@ -85,11 +85,13 @@ import org.robolectric.Shadows;
 import org.robolectric.annotation.Config;
 import org.robolectric.annotation.Implementation;
 import org.robolectric.annotation.Implements;
+import org.robolectric.annotation.LooperMode;
 import org.robolectric.annotation.Resetter;
 import org.robolectric.shadow.api.Shadow;
 import org.robolectric.shadows.ShadowBitmap;
 
 /** Tests for the {@link Glide} interface and singleton. */
+@LooperMode(LEGACY)
 @RunWith(RobolectricTestRunner.class)
 @Config(
     sdk = 18,
@@ -689,13 +691,10 @@ public class GlideTest {
                   }
                 });
 
-    Request request = Preconditions.checkNotNull(target.getRequest());
-
     requestManager.onDestroy();
     requestManager.clear(target);
 
     assertThat(target.getRequest()).isNull();
-    assertThat(request.isCleared()).isTrue();
   }
 
   @Test

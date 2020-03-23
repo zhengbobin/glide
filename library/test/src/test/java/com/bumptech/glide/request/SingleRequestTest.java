@@ -5,11 +5,11 @@ import static com.bumptech.glide.tests.Util.mockResource;
 import static com.google.common.truth.Truth.assertThat;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.anyBoolean;
-import static org.mockito.Matchers.anyInt;
-import static org.mockito.Matchers.eq;
-import static org.mockito.Matchers.isA;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isA;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -83,7 +83,6 @@ public class SingleRequestTest {
 
     request.onResourceReady(null, DataSource.LOCAL);
 
-    assertTrue(request.isFailed());
     verify(listener1)
         .onLoadFailed(isAGlideException(), isA(Number.class), eq(builder.target), anyBoolean());
   }
@@ -95,7 +94,6 @@ public class SingleRequestTest {
 
     request.onResourceReady(builder.resource, DataSource.REMOTE);
 
-    assertTrue(request.isFailed());
     verify(builder.engine).release(eq(builder.resource));
     verify(listener1)
         .onLoadFailed(isAGlideException(), any(Number.class), eq(builder.target), anyBoolean());
@@ -109,30 +107,9 @@ public class SingleRequestTest {
 
     request.onResourceReady(builder.resource, DataSource.DATA_DISK_CACHE);
 
-    assertTrue(request.isFailed());
     verify(builder.engine).release(eq(builder.resource));
     verify(listener1)
         .onLoadFailed(isAGlideException(), any(Number.class), eq(builder.target), anyBoolean());
-  }
-
-  @Test
-  public void testIsNotFailedAfterClear() {
-    SingleRequest<List> request = builder.build();
-
-    request.onResourceReady(null, DataSource.DATA_DISK_CACHE);
-    request.clear();
-
-    assertFalse(request.isFailed());
-  }
-
-  @Test
-  public void testIsNotFailedAfterBegin() {
-    SingleRequest<List> request = builder.build();
-
-    request.onResourceReady(null, DataSource.DATA_DISK_CACHE);
-    request.begin();
-
-    assertFalse(request.isFailed());
   }
 
   @Test
@@ -166,7 +143,7 @@ public class SingleRequestTest {
     SingleRequest<List> request = builder.build();
     request.clear();
 
-    verify(builder.target).onLoadCleared(any(Drawable.class));
+    verify(builder.target).onLoadCleared(anyDrawableOrNull());
   }
 
   @Test
@@ -175,7 +152,7 @@ public class SingleRequestTest {
     request.clear();
     request.clear();
 
-    verify(builder.target, times(1)).onLoadCleared(any(Drawable.class));
+    verify(builder.target, times(1)).onLoadCleared(anyDrawableOrNull());
   }
 
   @Test
@@ -190,6 +167,7 @@ public class SingleRequestTest {
   @Test
   public void testResourceIsNotCompleteWhenAskingCoordinatorIfCanSetImage() {
     RequestCoordinator requestCoordinator = mock(RequestCoordinator.class);
+    when(requestCoordinator.getRoot()).thenReturn(requestCoordinator);
     doAnswer(
             new Answer() {
               @Override
@@ -210,18 +188,43 @@ public class SingleRequestTest {
   }
 
   @Test
-  public void testIsNotFailedWithoutException() {
+  public void pause_whenRequestIsWaitingForASize_clearsRequest() {
     SingleRequest<List> request = builder.build();
 
-    assertFalse(request.isFailed());
+    request.begin();
+    request.pause();
+    assertThat(request.isRunning()).isFalse();
+    assertThat(request.isCleared()).isTrue();
   }
 
   @Test
-  public void testIsFailedAfterException() {
+  public void pause_whenRequestIsWaitingForAResource_clearsRequest() {
     SingleRequest<List> request = builder.build();
 
-    request.onLoadFailed(new GlideException("test"));
-    assertTrue(request.isFailed());
+    request.begin();
+    request.onSizeReady(100, 100);
+    request.pause();
+    assertThat(request.isRunning()).isFalse();
+    assertThat(request.isCleared()).isTrue();
+  }
+
+  @Test
+  public void pause_whenComplete_doesNotClearRequest() {
+    SingleRequest<List> request = builder.build();
+
+    request.onResourceReady(builder.resource, DataSource.REMOTE);
+    request.pause();
+    assertThat(request.isComplete()).isTrue();
+  }
+
+  @Test
+  public void pause_whenCleared_doesNotClearRequest() {
+    SingleRequest<List> request = builder.build();
+
+    request.clear();
+    request.pause();
+
+    verify(builder.target, times(1)).onLoadCleared(anyDrawableOrNull());
   }
 
   @Test
@@ -252,14 +255,6 @@ public class SingleRequestTest {
             anyBoolean(),
             any(ResourceCallback.class),
             anyExecutor());
-  }
-
-  @Test
-  public void testIsFailedAfterNoResultAndNullException() {
-    SingleRequest<List> request = builder.build();
-
-    request.onLoadFailed(new GlideException("test"));
-    assertTrue(request.isFailed());
   }
 
   @Test
@@ -632,6 +627,21 @@ public class SingleRequestTest {
   }
 
   @Test
+  public void
+      testRequestListenerIsCalledWithNotIsFirstRequestIfRequestCoordinatorParentReturnsResourceSet() {
+    SingleRequest<List> request = builder.addRequestListener(listener1).build();
+    RequestCoordinator rootRequestCoordinator = mock(RequestCoordinator.class);
+    when(rootRequestCoordinator.isAnyResourceSet()).thenReturn(true);
+    when(builder.requestCoordinator.isAnyResourceSet()).thenReturn(false);
+    when(builder.requestCoordinator.getRoot()).thenReturn(rootRequestCoordinator);
+    request.onResourceReady(builder.resource, DataSource.DATA_DISK_CACHE);
+
+    verify(listener1)
+        .onResourceReady(
+            eq(builder.result), any(Number.class), isAListTarget(), isADataSource(), eq(false));
+  }
+
+  @Test
   public void testTargetIsCalledWithAnimationFromFactory() {
     SingleRequest<List> request = builder.build();
     Transition<List> transition = mockTransition();
@@ -909,6 +919,7 @@ public class SingleRequestTest {
     private final Map<Class<?>, Transformation<?>> transformations = new HashMap<>();
 
     SingleRequestBuilder() {
+      when(requestCoordinator.getRoot()).thenReturn(requestCoordinator);
       when(requestCoordinator.canSetImage(any(Request.class))).thenReturn(true);
       when(requestCoordinator.canNotifyCleared(any(Request.class))).thenReturn(true);
       when(requestCoordinator.canNotifyStatusChanged(any(Request.class))).thenReturn(true);
@@ -999,6 +1010,7 @@ public class SingleRequestTest {
       return SingleRequest.obtain(
           /*context=*/ glideContext,
           /*glideContext=*/ glideContext,
+          /*requestLock=*/ new Object(),
           model,
           transcodeClass,
           requestOptions,
@@ -1013,6 +1025,10 @@ public class SingleRequestTest {
           transitionFactory,
           Executors.directExecutor());
     }
+  }
+
+  private static Drawable anyDrawableOrNull() {
+    return any();
   }
 
   // TODO do we want to move these to Util?
@@ -1032,7 +1048,7 @@ public class SingleRequestTest {
 
   @SuppressWarnings("unchecked")
   private static <T> Transition<T> anyTransition() {
-    return any(Transition.class);
+    return any();
   }
 
   private static Executor anyExecutor() {

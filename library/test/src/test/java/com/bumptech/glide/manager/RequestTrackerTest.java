@@ -27,69 +27,54 @@ public class RequestTrackerTest {
   }
 
   @Test
-  public void clearRequests_doesNotRecycleRequests() {
+  public void clearAndRemove_withRequestPreviouslyClearedInClearRequests_doesNothing() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
 
     tracker.clearRequests();
+    tracker.clearAndRemove(request);
 
     assertThat(request.isCleared()).isTrue();
-    assertThat(request.isRecycled()).isFalse();
   }
 
   @Test
-  public void clearRemoveAndRecycle_withRequestPreviouslyClearedInClearRequests_doesNothing() {
-    FakeRequest request = new FakeRequest();
-    tracker.addRequest(request);
-
-    tracker.clearRequests();
-    tracker.clearRemoveAndRecycle(request);
-
-    assertThat(request.isCleared()).isTrue();
-    assertThat(request.isRecycled()).isFalse();
+  public void clearAndRemove_withNullRequest_doesNothingAndReturnsTrue() {
+    assertThat(tracker.clearAndRemove(null)).isTrue();
   }
 
   @Test
-  public void clearRemoveAndRecycle_withNullRequest_doesNothingAndReturnsTrue() {
-    assertThat(tracker.clearRemoveAndRecycle(null)).isTrue();
-  }
-
-  @Test
-  public void clearRemoveAndRecycle_withUnTrackedRequest_doesNothingAndReturnsFalse() {
+  public void clearAndRemove_withUnTrackedRequest_doesNothingAndReturnsFalse() {
     FakeRequest request = new FakeRequest();
 
-    assertThat(tracker.clearRemoveAndRecycle(request)).isFalse();
+    assertThat(tracker.clearAndRemove(request)).isFalse();
 
     assertThat(request.isCleared()).isFalse();
-    assertThat(request.isRecycled()).isFalse();
   }
 
   @Test
-  public void clearRemoveAndRecycle_withTrackedRequest_clearsRecyclesAndReturnsTrue() {
+  public void clearAndRemov_withTrackedRequest_clearssAndReturnsTrue() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
 
-    assertThat(tracker.clearRemoveAndRecycle(request)).isTrue();
+    assertThat(tracker.clearAndRemove(request)).isTrue();
     assertThat(request.isCleared()).isTrue();
-    assertThat(request.isRecycled()).isTrue();
   }
 
   @Test
-  public void clearRemoveAndRecycle_withAlreadyRemovedRequest_doesNothingAndReturnsFalse() {
+  public void clearAndRemove_withAlreadyRemovedRequest_doesNothingAndReturnsFalse() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
-    tracker.clearRemoveAndRecycle(request);
-    assertThat(tracker.clearRemoveAndRecycle(request)).isFalse();
+    tracker.clearAndRemove(request);
+    assertThat(tracker.clearAndRemove(request)).isFalse();
 
     assertThat(request.isCleared()).isTrue();
-    assertThat(request.isRecycled()).isTrue();
   }
 
   @Test
   public void clearRequests_withPreviouslyClearedRequest_doesNotClearRequestAgain() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
-    tracker.clearRemoveAndRecycle(request);
+    tracker.clearAndRemove(request);
 
     tracker.clearRequests();
 
@@ -117,18 +102,29 @@ public class RequestTrackerTest {
 
     tracker.pauseRequests();
 
-    assertThat(request.isCleared()).isTrue();
+    assertThat(request.isPaused()).isTrue();
   }
 
   @Test
-  public void pauseRequests_withCompletedRequest_doesNotClearRequest() {
+  public void pauseRequests_withCompletedRequest_doesNotPauseRequest() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
 
     request.setIsComplete();
     tracker.pauseRequests();
 
-    assertThat(request.isCleared()).isFalse();
+    assertThat(request.isPaused()).isFalse();
+  }
+
+  @Test
+  public void pauseRequests_withClearedRequest_doesNotPauseRequest() {
+    FakeRequest request = new FakeRequest();
+    tracker.addRequest(request);
+
+    request.clear();
+    tracker.pauseRequests();
+
+    assertThat(request.isPaused()).isFalse();
   }
 
   @Test
@@ -168,17 +164,6 @@ public class RequestTrackerTest {
   }
 
   @Test
-  public void pauseRequests_withFailedRequest_doesNotClearRequest() {
-    FakeRequest request = new FakeRequest();
-    request.setIsFailed();
-    tracker.addRequest(request);
-
-    tracker.pauseRequests();
-
-    assertThat(request.isCleared()).isFalse();
-  }
-
-  @Test
   public void resumeRequests_withRequestAddedWhilePaused_startsRequest() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
@@ -197,17 +182,6 @@ public class RequestTrackerTest {
     tracker.resumeRequests();
 
     assertThat(request.isRunning()).isFalse();
-  }
-
-  @Test
-  public void resumeRequests_withFailedRequest_restartsRequest() {
-    FakeRequest request = new FakeRequest();
-    request.setIsFailed();
-    tracker.addRequest(request);
-
-    tracker.resumeRequests();
-
-    assertThat(request.isRunning()).isTrue();
   }
 
   @Test
@@ -279,17 +253,6 @@ public class RequestTrackerTest {
   }
 
   @Test
-  public void restartRequests_withFailedRequest_restartsRequest() {
-    FakeRequest request = new FakeRequest();
-    request.setIsFailed();
-    tracker.addRequest(request);
-
-    tracker.restartRequests();
-
-    assertThat(request.isRunning()).isTrue();
-  }
-
-  @Test
   public void restartRequests_withIncompleteRequest_restartsRequest() {
     FakeRequest request = new FakeRequest();
     tracker.addRequest(request);
@@ -302,25 +265,13 @@ public class RequestTrackerTest {
   @Test
   public void restartRequests_whenPaused_doesNotRestartRequests() {
     FakeRequest request = new FakeRequest();
-    request.setIsFailed();
+    request.setIsComplete();
     tracker.pauseRequests();
     tracker.addRequest(request);
 
     tracker.restartRequests();
 
     assertThat(request.isRunning()).isFalse();
-  }
-
-  @Test
-  public void restartRequests_withFailedRequestAddedWhilePaused_clearsFailedRequest() {
-    FakeRequest request = new FakeRequest();
-    request.setIsFailed();
-
-    tracker.pauseRequests();
-    tracker.addRequest(request);
-
-    tracker.restartRequests();
-    assertThat(request.isCleared()).isTrue();
   }
 
   @Test
@@ -349,6 +300,27 @@ public class RequestTrackerTest {
   public void testReturnsTrueFromIsPausedWhenPaused() {
     tracker.pauseRequests();
     assertTrue(tracker.isPaused());
+  }
+
+  @Test
+  public void pauseRequests_pausesRunningRequest() {
+    FakeRequest request = new FakeRequest();
+    request.setIsRunning();
+    tracker.addRequest(request);
+    tracker.pauseRequests();
+
+    assertThat(request.isCleared()).isTrue();
+  }
+
+  @Test
+  public void pauseRequest_doesNotPauseCompletedRequest() {
+    FakeRequest request = new FakeRequest();
+    request.setIsComplete();
+    tracker.addRequest(request);
+    tracker.pauseRequests();
+
+    assertThat(request.isComplete()).isTrue();
+    assertThat(request.isCleared()).isFalse();
   }
 
   @Test
@@ -381,11 +353,20 @@ public class RequestTrackerTest {
   }
 
   private static final class FakeRequest implements Request {
+
+    private boolean isPaused;
+
+    @Override
+    public void pause() {
+      isPaused = true;
+      if (isRunning) {
+        clear();
+      }
+    }
+
     private boolean isRunning;
-    private boolean isFailed;
     private boolean isCleared;
     private boolean isComplete;
-    private boolean isRecycled;
 
     void setIsComplete() {
       setIsComplete(true);
@@ -395,16 +376,12 @@ public class RequestTrackerTest {
       this.isComplete = isComplete;
     }
 
-    void setIsFailed() {
-      isFailed = true;
-    }
-
     void setIsRunning() {
       isRunning = true;
     }
 
-    boolean isRecycled() {
-      return isRecycled;
+    boolean isPaused() {
+      return isPaused;
     }
 
     @Override
@@ -421,7 +398,6 @@ public class RequestTrackerTest {
         throw new IllegalStateException();
       }
       isRunning = false;
-      isFailed = false;
       isCleared = true;
     }
 
@@ -436,26 +412,13 @@ public class RequestTrackerTest {
     }
 
     @Override
-    public boolean isResourceSet() {
-      throw new UnsupportedOperationException();
-    }
-
-    @Override
     public boolean isCleared() {
       return isCleared;
     }
 
     @Override
-    public boolean isFailed() {
-      return isFailed;
-    }
-
-    @Override
-    public void recycle() {
-      if (isRecycled) {
-        throw new IllegalStateException();
-      }
-      isRecycled = true;
+    public boolean isAnyResourceSet() {
+      return isComplete;
     }
 
     @Override
@@ -474,7 +437,7 @@ public class RequestTrackerTest {
 
     @Override
     public Void answer(InvocationOnMock invocationOnMock) throws Throwable {
-      tracker.clearRemoveAndRecycle(toRemove);
+      tracker.clearAndRemove(toRemove);
       return null;
     }
   }

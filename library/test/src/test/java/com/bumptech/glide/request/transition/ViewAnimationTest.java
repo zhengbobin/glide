@@ -2,8 +2,8 @@ package com.bumptech.glide.request.transition;
 
 import static com.bumptech.glide.request.transition.Transition.ViewAdapter;
 import static org.junit.Assert.assertFalse;
-import static org.mockito.Matchers.any;
-import static org.mockito.Matchers.eq;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -50,9 +50,13 @@ public class ViewAnimationTest {
   @Test
   public void testStartsAnimationOnAnimate() {
     Animation animation = mock(Animation.class);
-    when(viewTransitionAnimationFactory.build(any(Context.class))).thenReturn(animation);
+    when(viewTransitionAnimationFactory.build(anyContextOrNull())).thenReturn(animation);
     viewAnimation.transition(null, adapter);
     verify(view).clearAnimation();
     verify(view).startAnimation(eq(animation));
+  }
+
+  private static Context anyContextOrNull() {
+    return any();
   }
 }
